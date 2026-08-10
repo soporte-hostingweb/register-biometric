@@ -235,14 +235,32 @@ export default function Dashboard() {
       }
 
       const location = await Location.getCurrentPositionAsync({});
-      const ubicacion = `${location.coords.latitude.toFixed(5)}, ${location.coords.longitude.toFixed(5)}`;
+      const coords = `${location.coords.latitude.toFixed(5)}, ${location.coords.longitude.toFixed(5)}`;
+      
+      let direccion = coords;
+      try {
+        const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.coords.latitude}&lon=${location.coords.longitude}&zoom=17`, {
+          headers: {
+            'User-Agent': 'AverageBiometricRegistrationApp'
+          }
+        });
+        if (geoRes.ok) {
+          const geoData = await geoRes.json();
+          if (geoData && geoData.display_name) {
+            const parts = geoData.display_name.split(',');
+            direccion = parts.slice(0, 4).join(',').trim();
+          }
+        }
+      } catch (geoErr) {
+        console.log('Error al obtener dirección:', geoErr);
+      }
 
       const nuevaMarcacion: Marcacion = {
         id: Date.now().toString(),
         tipo: siguienteTipo,
         fecha: todayStr,
         hora: new Date().toLocaleTimeString(),
-        ubicacion,
+        ubicacion: direccion,
       };
 
       const nuevasMarcaciones = [...marcaciones, nuevaMarcacion];
@@ -616,26 +634,25 @@ export default function Dashboard() {
   const renderLocation = (loc: string) => {
     if (!loc) return null;
     const coordsReg = /^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/;
-    if (coordsReg.test(loc.trim())) {
-      const [lat, lng] = loc.trim().split(',');
-      return (
-        <TouchableOpacity
-          onPress={() => {
-            if (Platform.OS === 'web') {
-              window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
-            }
-          }}
-          style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="location" size={14} color="#208AEF" />
-          <Text style={[styles.historyLocation, { color: '#208AEF', textDecorationLine: 'underline', marginTop: 0 }]}>
-            Ver en Google Maps
-          </Text>
-        </TouchableOpacity>
-      );
-    }
-    return <Text style={styles.historyLocation}>{loc}</Text>;
+    const isCoords = coordsReg.test(loc.trim());
+    
+    return (
+      <TouchableOpacity
+        onPress={() => {
+          if (Platform.OS === 'web') {
+            const query = isCoords ? loc.trim() : encodeURIComponent(loc.trim());
+            window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+          }
+        }}
+        style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="location" size={14} color="#208AEF" />
+        <Text style={[styles.historyLocation, { color: '#208AEF', textDecorationLine: 'underline', marginTop: 0 }]}>
+          {loc}
+        </Text>
+      </TouchableOpacity>
+    );
   };
 
   return (
