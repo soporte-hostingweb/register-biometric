@@ -345,163 +345,271 @@ export default function Dashboard() {
   const tardanzas = thisMonthLogs.filter((log: any) => log.status === 'Tardanza').length;
   const asistencias = thisMonthLogs.filter((log: any) => log.status !== 'Falta' && log.status !== 'Inasistencia').length;
 
-  const downloadExcel = () => {
-    if (historyLogs.length === 0) return;
-    
-    let excelContent = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta http-equiv="content-type" content="application/vnd.ms-excel; charset=UTF-8">
-        <style>
-          table { border-collapse: collapse; margin-top: 10px; }
-          th { background-color: #1E3A5F; color: #FFFFFF; font-weight: bold; border: 1px solid #DDDDDD; padding: 8px; }
-          td { border: 1px solid #DDDDDD; padding: 8px; text-align: left; }
-        </style>
-      </head>
-      <body>
-        <h3>Reporte de Asistencia - ${(fullName || 'Empleado')}</h3>
-        <p>Generado el: ${new Date().toLocaleDateString('es-PE')}</p>
-        <table>
-          <tr>
-            <th>Fecha</th>
-            <th>Entrada</th>
-            <th>Salida</th>
-            <th>Horas Trabajadas</th>
-            <th>Estado</th>
-            <th>Observaciones</th>
-          </tr>
-    `;
-    
-    historyLogs.forEach((log: any) => {
-      const dateObj = new Date(log.date);
-      const dateStr = dateObj.toLocaleDateString('es-PE');
-      
-      const clockIn = log.clockIn || '--';
-      const clockOut = log.clockOut || '--';
-      const hours = log.totalHours || '0h';
-      const status = log.status || 'Registrado';
-      const obs = log.observations || '';
-      
-      excelContent += `
-        <tr>
-          <td>${dateStr}</td>
-          <td>${clockIn}</td>
-          <td>${clockOut}</td>
-          <td>${hours}</td>
-          <td>${status}</td>
-          <td>${obs}</td>
-        </tr>
-      `;
+  const loadExcelJS = () => {
+    return new Promise<any>((resolve, reject) => {
+      if ((window as any).ExcelJS) {
+        resolve((window as any).ExcelJS);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js';
+      script.onload = () => resolve((window as any).ExcelJS);
+      script.onerror = (err) => reject(err);
+      document.head.appendChild(script);
     });
-    
-    excelContent += `
-        </table>
-      </body>
-      </html>
-    `;
-    
+  };
+
+  const downloadExcel = async () => {
+    if (thisMonthLogs.length === 0) return;
+
     if (Platform.OS === 'web') {
-      const blob = new Blob([excelContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `reporte_asistencia_${(fullName || 'empleado').replace(/\s+/g, '_')}.xls`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      try {
+        const ExcelJS = await loadExcelJS();
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Reporte de Asistencia');
+
+        // Mostrar líneas de cuadrícula
+        worksheet.views = [{ showGridLines: true }];
+
+        // Título del Reporte
+        const titleRow = worksheet.getRow(2);
+        titleRow.getCell(2).value = 'REPORTE DE ASISTENCIA MENSUAL';
+        titleRow.getCell(2).font = { name: 'Segoe UI', size: 16, bold: true, color: { argb: 'FF1E3A5F' } };
+
+        // Información del Colaborador
+        const infoRow1 = worksheet.getRow(4);
+        infoRow1.getCell(2).value = 'Colaborador:';
+        infoRow1.getCell(2).font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF555555' } };
+        infoRow1.getCell(3).value = fullName;
+        infoRow1.getCell(3).font = { name: 'Segoe UI', size: 11 };
+
+        infoRow1.getCell(5).value = 'Periodo:';
+        infoRow1.getCell(5).font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF555555' } };
+        
+        const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        const mesNombre = meses[new Date().getMonth()];
+        const anio = new Date().getFullYear();
+        infoRow1.getCell(6).value = `${mesNombre} ${anio}`;
+        infoRow1.getCell(6).font = { name: 'Segoe UI', size: 11 };
+
+        const infoRow2 = worksheet.getRow(5);
+        infoRow2.getCell(2).value = 'Correo:';
+        infoRow2.getCell(2).font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF555555' } };
+        infoRow2.getCell(3).value = email;
+        infoRow2.getCell(3).font = { name: 'Segoe UI', size: 11 };
+
+        infoRow2.getCell(5).value = 'Cargo:';
+        infoRow2.getCell(5).font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF555555' } };
+        infoRow2.getCell(6).value = cargo || 'Técnico';
+        infoRow2.getCell(6).font = { name: 'Segoe UI', size: 11 };
+
+        // Cabeceras de la Tabla
+        const startRow = 7;
+        const startCol = 2; // Inicia en columna B (2)
+
+        const headerRow = worksheet.getRow(startRow);
+        headerRow.height = 26;
+
+        const columns = [
+          { header: 'Fecha', width: 15 },
+          { header: 'Entrada', width: 14 },
+          { header: 'Salida', width: 14 },
+          { header: 'Horas Trabajadas', width: 20 },
+          { header: 'Estado', width: 16 },
+          { header: 'Observaciones', width: 35 }
+        ];
+
+        columns.forEach((col, i) => {
+          const cell = headerRow.getCell(startCol + i);
+          cell.value = col.header;
+          worksheet.getColumn(startCol + i).width = col.width;
+
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF1E3A5F' }
+          };
+          cell.font = {
+            name: 'Segoe UI',
+            size: 11,
+            bold: true,
+            color: { argb: 'FFFFFFFF' }
+          };
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFDDDDDD' } },
+            left: { style: 'thin', color: { argb: 'FFDDDDDD' } },
+            bottom: { style: 'medium', color: { argb: 'FF1E3A5F' } },
+            right: { style: 'thin', color: { argb: 'FFDDDDDD' } }
+          };
+        });
+
+        // Filas de datos
+        thisMonthLogs.forEach((log: any, index: number) => {
+          const rowIndex = startRow + 1 + index;
+          const dataRow = worksheet.getRow(rowIndex);
+          dataRow.height = 22;
+
+          const dateObj = new Date(log.date);
+          const dateStr = dateObj.toLocaleDateString('es-PE');
+          const clockIn = log.clockIn || '--';
+          const clockOut = log.clockOut || '--';
+          const hours = log.totalHours || '0h';
+          const status = log.status || 'Registrado';
+          const obs = log.observations || '';
+
+          const values = [dateStr, clockIn, clockOut, hours, status, obs];
+
+          values.forEach((val, i) => {
+            const cell = dataRow.getCell(startCol + i);
+            cell.value = val;
+            cell.font = { name: 'Segoe UI', size: 10 };
+            cell.alignment = { vertical: 'middle' };
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'FFEAEAEA' } },
+              left: { style: 'thin', color: { argb: 'FFEAEAEA' } },
+              bottom: { style: 'thin', color: { argb: 'FFEAEAEA' } },
+              right: { style: 'thin', color: { argb: 'FFEAEAEA' } }
+            };
+
+            // Alineaciones
+            if ([0, 1, 2, 3].includes(i)) {
+              cell.alignment.horizontal = 'center';
+            }
+
+            // Estilos del Estado con colores específicos
+            if (i === 4) {
+              cell.alignment.horizontal = 'center';
+              cell.font = { name: 'Segoe UI', size: 10, bold: true };
+              if (status === 'Puntual') {
+                cell.font.color = { argb: 'FF2E7D32' }; // Verde
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E9' } };
+              } else if (status === 'Tardanza') {
+                cell.font.color = { argb: 'FFE65100' }; // Naranja
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
+              } else if (status === 'Falta' || status === 'Inasistencia') {
+                cell.font.color = { argb: 'FFC62828' }; // Rojo
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEBEE' } };
+              }
+            }
+          });
+        });
+
+        // Escribir el buffer y descargar como .xlsx
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `reporte_asistencia_${(fullName || 'empleado').replace(/\s+/g, '_')}.xlsx`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+      } catch (error) {
+        console.error('Error al generar Excel con ExcelJS:', error);
+      }
     }
   };
 
-  const downloadPDF = () => {
-    if (historyLogs.length === 0) return;
+  const loadHtml2Pdf = () => {
+    return new Promise<any>((resolve, reject) => {
+      if ((window as any).html2pdf) {
+        resolve((window as any).html2pdf);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      script.onload = () => resolve((window as any).html2pdf);
+      script.onerror = (err) => reject(err);
+      document.head.appendChild(script);
+    });
+  };
+
+  const downloadPDF = async () => {
+    if (thisMonthLogs.length === 0) return;
     
     if (Platform.OS === 'web') {
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) return;
-      
-      let html = `
-        <html>
-        <head>
-          <title>Reporte de Asistencia - ${fullName}</title>
-          <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #333; }
-            .header-container { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #208AEF; padding-bottom: 15px; margin-bottom: 25px; }
-            .logo-text { font-size: 26px; font-weight: 800; color: #1E3A5F; letter-spacing: 1px; }
-            .report-title { font-size: 20px; font-weight: 600; color: #555; }
-            .meta-info { margin-bottom: 30px; line-height: 1.6; font-size: 14px; background-color: #F4F6F9; padding: 15px; borderRadius: 8px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            th, td { border: 1px solid #E0E0E0; padding: 10px 12px; text-align: left; font-size: 12px; }
-            th { background-color: #1E3A5F; color: white; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-            tr:nth-child(even) { background-color: #F9FBFD; }
-            .status { font-weight: 700; padding: 3px 6px; borderRadius: 4px; font-size: 10px; text-transform: uppercase; }
-            .status-Puntual { color: #4CAF50; background-color: rgba(76,175,80,0.1); }
-            .status-Tardanza { color: #FF9800; background-color: rgba(255,152,0,0.1); }
-            .status-Falta, .status-Inasistencia { color: #F44336; background-color: rgba(244,67,54,0.1); }
-          </style>
-        </head>
-        <body>
-          <div class="header-container">
-            <div class="logo-text">HWPerú</div>
-            <div class="report-title">Reporte Mensual de Asistencia</div>
+      try {
+        const html2pdf = await loadHtml2Pdf();
+        
+        const element = document.createElement('div');
+        element.style.padding = '30px';
+        element.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+        element.style.color = '#333';
+        element.style.backgroundColor = '#ffffff';
+        
+        let tableRows = '';
+        thisMonthLogs.forEach((log: any) => {
+          const dateObj = new Date(log.date);
+          const dateStr = dateObj.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          
+          let statusColor = '#4CAF50';
+          let statusBg = 'rgba(76,175,80,0.1)';
+          if (log.status === 'Tardanza') {
+            statusColor = '#FF9800';
+            statusBg = 'rgba(255,152,0,0.1)';
+          } else if (log.status === 'Falta' || log.status === 'Inasistencia') {
+            statusColor = '#F44336';
+            statusBg = 'rgba(244,67,54,0.1)';
+          }
+
+          tableRows += `
+            <tr style="border-bottom: 1px solid #E0E0E0;">
+              <td style="padding: 10px 12px; font-size: 12px;"><strong>${dateStr}</strong></td>
+              <td style="padding: 10px 12px; font-size: 12px;">${log.clockIn || '--'}</td>
+              <td style="padding: 10px 12px; font-size: 12px;">${log.clockOut || '--'}</td>
+              <td style="padding: 10px 12px; font-size: 12px;">${log.totalHours || '0h'}</td>
+              <td style="padding: 10px 12px; font-size: 12px;">
+                <span style="font-weight: 700; padding: 3px 6px; border-radius: 4px; font-size: 10px; text-transform: uppercase; color: ${statusColor}; background-color: ${statusBg};">
+                  ${log.status || 'Registrado'}
+                </span>
+              </td>
+              <td style="padding: 10px 12px; font-size: 12px;">${log.observations || ''}</td>
+            </tr>
+          `;
+        });
+
+        element.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #208AEF; padding-bottom: 15px; margin-bottom: 25px;">
+            <div style="font-size: 26px; font-weight: 800; color: #1E3A5F; letter-spacing: 1px; font-family: sans-serif;">HWPerú</div>
+            <div style="font-size: 20px; font-weight: 600; color: #555; font-family: sans-serif;">Reporte Mensual de Asistencia</div>
           </div>
-          <div class="meta-info">
+          <div style="margin-bottom: 30px; line-height: 1.6; font-size: 14px; background-color: #F4F6F9; padding: 15px; border-radius: 8px;">
             <div><strong>Colaborador:</strong> ${fullName}</div>
             <div><strong>Correo Electrónico:</strong> ${email}</div>
             <div><strong>Cargo:</strong> ${cargo || 'Técnico'}</div>
             <div><strong>Fecha de Emisión:</strong> ${new Date().toLocaleDateString('es-PE')} ${new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</div>
           </div>
-          <table>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
             <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Entrada</th>
-                <th>Salida</th>
-                <th>Horas Trab.</th>
-                <th>Estado</th>
-                <th>Observaciones</th>
+              <tr style="background-color: #1E3A5F; color: white;">
+                <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; border: 1px solid #1E3A5F;">Fecha</th>
+                <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; border: 1px solid #1E3A5F;">Entrada</th>
+                <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; border: 1px solid #1E3A5F;">Salida</th>
+                <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; border: 1px solid #1E3A5F;">Horas Trab.</th>
+                <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; border: 1px solid #1E3A5F;">Estado</th>
+                <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; border: 1px solid #1E3A5F;">Observaciones</th>
               </tr>
             </thead>
             <tbody>
-      `;
-      
-      historyLogs.forEach((log: any) => {
-        const dateObj = new Date(log.date);
-        const dateStr = dateObj.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        
-        let statusClass = 'status-Puntual';
-        if (log.status === 'Tardanza') {
-          statusClass = 'status-Tardanza';
-        } else if (log.status === 'Falta' || log.status === 'Inasistencia') {
-          statusClass = 'status-Falta';
-        }
-
-        html += `
-          <tr>
-            <td><strong>${dateStr}</strong></td>
-            <td>${log.clockIn || '--'}</td>
-            <td>${log.clockOut || '--'}</td>
-            <td>${log.totalHours || '0h'}</td>
-            <td><span class="status ${statusClass}">${log.status || 'Registrado'}</span></td>
-            <td>${log.observations || ''}</td>
-          </tr>
-        `;
-      });
-      
-      html += `
+              ${tableRows}
             </tbody>
           </table>
-          <script>
-            window.onload = function() {
-              window.print();
-              setTimeout(function() { window.close(); }, 500);
-            }
-          </script>
-        </body>
-        </html>
-      `;
-      
-      printWindow.document.write(html);
-      printWindow.document.close();
+        `;
+
+        const opt = {
+          margin: 10,
+          filename: `reporte_asistencia_${(fullName || 'empleado').replace(/\s+/g, '_')}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+        html2pdf().from(element).set(opt).save();
+      } catch (error) {
+        console.error('Error al generar PDF:', error);
+      }
     }
   };
 
