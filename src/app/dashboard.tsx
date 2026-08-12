@@ -5,7 +5,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Modal, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { styles } from '../styles/dashboard';
 
@@ -45,6 +45,77 @@ const getStorageKey = (userEmail?: string | null) => {
   return `@asistencia_marcaciones_${cleanEmail}`;
 };
 
+const formatLocalTimeFromUTC = (timeStr?: string | null, dateStr?: string | null): string => {
+  if (!timeStr || timeStr === '--' || timeStr === '-' || timeStr === 'null') {
+    return '--';
+  }
+
+  const str = String(timeStr).trim();
+
+  if (str.includes('-') && (str.includes('T') || str.includes(' '))) {
+    const formattedStr = str.replace(' ', 'T');
+    const utcStr = (formattedStr.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(formattedStr))
+      ? formattedStr
+      : formattedStr + 'Z';
+    const d = new Date(utcStr);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleTimeString('es-PE', {
+        timeZone: 'America/Lima',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+    }
+  }
+
+  // Extraer fecha base (YYYY-MM-DD)
+  let dateBase = getTodayDateStr();
+  if (dateStr) {
+    const cleanDateStr = String(dateStr).trim();
+    if (cleanDateStr.length >= 10) {
+      dateBase = cleanDateStr.substring(0, 10);
+    }
+  }
+
+  // Parsear hora (ej: "01:25 PM", "13:25:00", "8:25 a. m.")
+  const lowerStr = str.toLowerCase();
+  const isPM = lowerStr.includes('pm') || lowerStr.includes('p. m.') || lowerStr.includes('p.m.');
+  const isAM = lowerStr.includes('am') || lowerStr.includes('a. m.') || lowerStr.includes('a.m.');
+
+  const numbers = str.match(/\d+/g);
+  if (!numbers || numbers.length === 0) {
+    return timeStr;
+  }
+
+  let hours = parseInt(numbers[0], 10);
+  const minutes = numbers.length > 1 ? parseInt(numbers[1], 10) : 0;
+  const seconds = numbers.length > 2 ? parseInt(numbers[2], 10) : 0;
+
+  if (isPM && hours < 12) {
+    hours += 12;
+  } else if (isAM && hours === 12) {
+    hours = 0;
+  }
+
+  const hh = String(hours).padStart(2, '0');
+  const mm = String(minutes).padStart(2, '0');
+  const ss = String(seconds).padStart(2, '0');
+
+  const isoUtcStr = `${dateBase}T${hh}:${mm}:${ss}Z`;
+  const dateObj = new Date(isoUtcStr);
+
+  if (isNaN(dateObj.getTime())) {
+    return timeStr;
+  }
+
+  return dateObj.toLocaleTimeString('es-PE', {
+    timeZone: 'America/Lima',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+};
+
 export default function Dashboard() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [marcaciones, setMarcaciones] = useState<Marcacion[]>([]);
@@ -53,6 +124,7 @@ export default function Dashboard() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [cargo, setCargo] = useState<string | null>(null);
   const [historyLogs, setHistoryLogs] = useState<any[]>([]);
+  const [showFullHistory, setShowFullHistory] = useState(false);
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width > 768;
   const { fullName, rol, email } = useLocalSearchParams<{ fullName: string; rol: string; email: string }>();
@@ -125,8 +197,14 @@ export default function Dashboard() {
 
           if (userLogs.length > 0) {
             const serverMarcaciones: Marcacion[] = userLogs.map((log: any) => {
-              const checkTime = log.CHECKTIME ? new Date(log.CHECKTIME) : new Date();
-              const horaStr = checkTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+              const horaStr = log.CHECKTIME
+                ? formatLocalTimeFromUTC(String(log.CHECKTIME), todayStr)
+                : new Date().toLocaleTimeString('es-PE', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                  timeZone: 'America/Lima',
+                });
               const tipo: 'Entrada' | 'Salida' = (log.CHECKTYPE === 0 || log.CHECKTYPE === '0' || log.CHECKTYPE === 'I' || log.CHECKTYPE === 'Entrada') ? 'Entrada' : 'Salida';
               const ubicacion = log.SN ? log.SN.replace('MOBILE_GPS:', '') : 'Servidor Central';
               return {
@@ -236,7 +314,7 @@ export default function Dashboard() {
 
       const location = await Location.getCurrentPositionAsync({});
       const coords = `${location.coords.latitude.toFixed(5)}, ${location.coords.longitude.toFixed(5)}`;
-      
+
       let direccion = coords;
       try {
         const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.coords.latitude}&lon=${location.coords.longitude}&zoom=17`, {
@@ -259,7 +337,7 @@ export default function Dashboard() {
         id: Date.now().toString(),
         tipo: siguienteTipo,
         fecha: todayStr,
-        hora: new Date().toLocaleTimeString(),
+        hora: new Date().toLocaleTimeString('es-PE', { timeZone: 'America/Lima' }),
         ubicacion: direccion,
       };
 
@@ -284,7 +362,7 @@ export default function Dashboard() {
           }),
           signal: controller.signal,
         });
-        
+
         clearTimeout(timeoutId);
 
         if (res.status === 403) {
@@ -403,7 +481,7 @@ export default function Dashboard() {
 
         infoRow1.getCell(5).value = 'Periodo:';
         infoRow1.getCell(5).font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF555555' } };
-        
+
         const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
         const mesNombre = meses[new Date().getMonth()];
         const anio = new Date().getFullYear();
@@ -470,8 +548,8 @@ export default function Dashboard() {
 
           const dateObj = new Date(log.date);
           const dateStr = dateObj.toLocaleDateString('es-PE');
-          const clockIn = log.clockIn || '--';
-          const clockOut = log.clockOut || '--';
+          const clockIn = formatLocalTimeFromUTC(log.clockIn, log.date);
+          const clockOut = formatLocalTimeFromUTC(log.clockOut, log.date);
           const hours = log.totalHours || '0h';
           const status = log.status || 'Registrado';
           const obs = log.observations || '';
@@ -546,22 +624,22 @@ export default function Dashboard() {
 
   const downloadPDF = async () => {
     if (thisMonthLogs.length === 0) return;
-    
+
     if (Platform.OS === 'web') {
       try {
         const html2pdf = await loadHtml2Pdf();
-        
+
         const element = document.createElement('div');
         element.style.padding = '30px';
         element.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
         element.style.color = '#333';
         element.style.backgroundColor = '#ffffff';
-        
+
         let tableRows = '';
         thisMonthLogs.forEach((log: any) => {
           const dateObj = new Date(log.date);
           const dateStr = dateObj.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-          
+
           let statusColor = '#4CAF50';
           let statusBg = 'rgba(76,175,80,0.1)';
           if (log.status === 'Tardanza') {
@@ -575,8 +653,8 @@ export default function Dashboard() {
           tableRows += `
             <tr style="border-bottom: 1px solid #E0E0E0;">
               <td style="padding: 10px 12px; font-size: 12px;"><strong>${dateStr}</strong></td>
-              <td style="padding: 10px 12px; font-size: 12px;">${log.clockIn || '--'}</td>
-              <td style="padding: 10px 12px; font-size: 12px;">${log.clockOut || '--'}</td>
+              <td style="padding: 10px 12px; font-size: 12px;">${formatLocalTimeFromUTC(log.clockIn, log.date)}</td>
+              <td style="padding: 10px 12px; font-size: 12px;">${formatLocalTimeFromUTC(log.clockOut, log.date)}</td>
               <td style="padding: 10px 12px; font-size: 12px;">${log.totalHours || '0h'}</td>
               <td style="padding: 10px 12px; font-size: 12px;">
                 <span style="font-weight: 700; padding: 3px 6px; border-radius: 4px; font-size: 10px; text-transform: uppercase; color: ${statusColor}; background-color: ${statusBg};">
@@ -635,7 +713,7 @@ export default function Dashboard() {
     if (!loc) return null;
     const coordsReg = /^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/;
     const isCoords = coordsReg.test(loc.trim());
-    
+
     return (
       <TouchableOpacity
         onPress={() => {
@@ -842,13 +920,25 @@ export default function Dashboard() {
                         </View>
                         <View style={styles.recentItemDetails}>
                           <Text style={styles.recentTimeText}>
-                            🚪 Ent: {log.clockIn || '--'} | 🚪 Sal: {log.clockOut || '--'}
+                            🚪 Ent: {formatLocalTimeFromUTC(log.clockIn, log.date)} | 🚪 Sal: {formatLocalTimeFromUTC(log.clockOut, log.date)}
                           </Text>
                           <Text style={styles.recentHours}>{log.totalHours || '0h'}</Text>
                         </View>
                       </View>
                     );
                   })}
+
+                  {/* Botón Ver historial completo */}
+                  {historyLogs.length > 5 && (
+                    <TouchableOpacity
+                      style={styles.viewFullHistoryBtn}
+                      onPress={() => setShowFullHistory(true)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="calendar-outline" size={16} color="#208AEF" />
+                      <Text style={styles.viewFullHistoryText}>Ver historial completo ({historyLogs.length} registros)</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
             </View>
@@ -1001,18 +1091,108 @@ export default function Dashboard() {
                       </View>
                       <View style={styles.recentItemDetails}>
                         <Text style={styles.recentTimeText}>
-                          🚪 Ent: {log.clockIn || '--'} | 🚪 Sal: {log.clockOut || '--'}
+                          🚪 Ent: {formatLocalTimeFromUTC(log.clockIn, log.date)} | 🚪 Sal: {formatLocalTimeFromUTC(log.clockOut, log.date)}
                         </Text>
                         <Text style={styles.recentHours}>{log.totalHours || '0h'}</Text>
                       </View>
                     </View>
                   );
                 })}
+
+                {/* Botón Ver historial completo */}
+                {historyLogs.length > 5 && (
+                  <TouchableOpacity
+                    style={styles.viewFullHistoryBtn}
+                    onPress={() => setShowFullHistory(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="calendar-outline" size={16} color="#208AEF" />
+                    <Text style={styles.viewFullHistoryText}>Ver historial completo ({historyLogs.length} registros)</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </>
         )}
       </ScrollView>
+
+      {/* MODAL HISTORIAL COMPLETO */}
+      <Modal visible={showFullHistory} transparent animationType="slide">
+        <View style={styles.fullHistoryOverlay}>
+          <View style={styles.fullHistoryContainer}>
+            <View style={styles.fullHistoryHeader}>
+              <Text style={styles.fullHistoryTitle}>Historial Completo del Mes</Text>
+              <TouchableOpacity
+                onPress={() => setShowFullHistory(false)}
+                style={styles.fullHistoryCloseBtn}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.fullHistorySummary}>
+              <View style={styles.fullHistorySummaryItem}>
+                <Ionicons name="time-outline" size={14} color="#208AEF" />
+                <Text style={styles.fullHistorySummaryText}>{totalHours}h trabajadas</Text>
+              </View>
+              <View style={styles.fullHistorySummaryItem}>
+                <Ionicons name="checkmark-circle-outline" size={14} color="#66BB6A" />
+                <Text style={styles.fullHistorySummaryText}>{asistencias} asistencias</Text>
+              </View>
+              <View style={styles.fullHistorySummaryItem}>
+                <Ionicons name="warning-outline" size={14} color="#FFA726" />
+                <Text style={styles.fullHistorySummaryText}>{tardanzas} tardanzas</Text>
+              </View>
+            </View>
+
+            <ScrollView style={styles.fullHistoryScroll} showsVerticalScrollIndicator={false}>
+              {thisMonthLogs.map((log: any, idx: number) => {
+                const dateObj = new Date(log.date);
+                const formattedDate = dateObj.toLocaleDateString('es-PE', {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                });
+
+                let badgeStyle = styles.badgePuntual;
+                let textStyle = styles.textPuntual;
+                if (log.status === 'Tardanza') {
+                  badgeStyle = styles.badgeTardanza;
+                  textStyle = styles.textTardanza;
+                } else if (log.status === 'Falta' || log.status === 'Inasistencia') {
+                  badgeStyle = styles.badgeFalta;
+                  textStyle = styles.textFalta;
+                }
+
+                return (
+                  <View key={idx} style={styles.recentItem}>
+                    <View style={styles.recentItemHeader}>
+                      <Text style={styles.recentDate}>{formattedDate}</Text>
+                      <View style={[styles.statusBadge, badgeStyle]}>
+                        <Text style={[styles.badgeText, textStyle]}>{log.status || 'Registrado'}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.recentItemDetails}>
+                      <Text style={styles.recentTimeText}>
+                        🚪 Ent: {formatLocalTimeFromUTC(log.clockIn, log.date)} | 🚪 Sal: {formatLocalTimeFromUTC(log.clockOut, log.date)}
+                      </Text>
+                      <Text style={styles.recentHours}>{log.totalHours || '0h'}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+              {thisMonthLogs.length === 0 && (
+                <View style={styles.emptyCard}>
+                  <Ionicons name="calendar-outline" size={28} color="#A0A5B1" />
+                  <Text style={styles.emptyText}>No hay registros este mes</Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
