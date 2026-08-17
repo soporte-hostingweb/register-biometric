@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Platform, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { apiFetch } from '../services/api';
 
 type Empleado = {
   nombre: string;
@@ -51,7 +52,7 @@ export default function PerfilScreen() {
   useEffect(() => {
     const fetchPerfil = async () => {
       try {
-        const response = await fetch('http://15.235.16.229:3000/api/empleados');
+        const response = await apiFetch('/api/empleados');
         const data = await response.json();
 
         const encontrado = data.find(

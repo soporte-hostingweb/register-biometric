@@ -2,6 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { API_URL, saveAccessToken } from '../services/api';
+import { completeDeviceAuthorization } from '../services/device-auth';
 import { styles } from '../styles/login';
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -28,11 +30,12 @@ export default function LoginScreen() {
     const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 segundos de límite
 
     try {
-      const response = await fetch('http://15.235.16.229:3000/api/login', {
+      const response = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, app: 'asistencia' }),
         signal: controller.signal,
+        credentials: 'include',
       });
 
       clearTimeout(timeoutId);
@@ -47,9 +50,19 @@ export default function LoginScreen() {
         return;
       }
 
-      const data = await response.json();
+      let data = await response.json();
 
       if (data.success) {
+        if (data.deviceRegistrationRequired || data.deviceAuthenticationRequired) {
+          data = await completeDeviceAuthorization(data);
+        }
+
+        if (!data.user?.token) {
+          showAlert('Error', 'El servidor no devolviÃ³ un token de acceso');
+          return;
+        }
+
+        await saveAccessToken(data.user.token);
         const userEmail = data.user.email ? data.user.email.toLowerCase().trim() : '';
 
         router.push({

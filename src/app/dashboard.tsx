@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { apiFetch, logoutFromApi } from '../services/api';
 import { styles } from '../styles/dashboard';
 
 Notifications.setNotificationHandler({
@@ -165,7 +166,7 @@ export default function Dashboard() {
         }
 
         if (pushToken) {
-          await fetch('http://15.235.16.229:3000/api/users/push-token', {
+          await apiFetch('/api/users/push-token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, pushToken }),
@@ -184,7 +185,7 @@ export default function Dashboard() {
       if (!email) return;
       try {
         const todayStr = getTodayDateStr();
-        const response = await fetch(`http://15.235.16.229:3000/api/attendance/logs?date=${todayStr}&t=${Date.now()}`);
+        const response = await apiFetch(`/api/attendance/logs?date=${todayStr}&t=${Date.now()}`);
         if (response.ok) {
           const logs = await response.json();
           const userLogs = logs.filter((log: any) => {
@@ -252,7 +253,7 @@ export default function Dashboard() {
     const fetchHistory = async () => {
       if (!email) return;
       try {
-        const response = await fetch(`http://15.235.16.229:3000/api/attendance/history/by-email/${email}`);
+        const response = await apiFetch(`/api/attendance/history/by-email/${encodeURIComponent(email)}`);
         if (response.ok) {
           const data = await response.json();
           setHistoryLogs(data);
@@ -269,7 +270,7 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchCargo = async () => {
       try {
-        const response = await fetch('http://15.235.16.229:3000/api/empleados');
+        const response = await apiFetch('/api/empleados');
         const data = await response.json();
         const encontrado = data.find(
           (emp: Empleado) => emp.email?.toLowerCase() === email?.toLowerCase()
@@ -351,7 +352,7 @@ export default function Dashboard() {
 
       try {
         const checkType = siguienteTipo === 'Entrada' ? 0 : 1;
-        const res = await fetch('http://15.235.16.229:3000/api/attendance/register', {
+        const res = await apiFetch('/api/attendance/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -385,7 +386,7 @@ export default function Dashboard() {
 
       // Refrescar el historial en las estadísticas
       try {
-        const historyRes = await fetch(`http://15.235.16.229:3000/api/attendance/history/by-email/${email}`);
+        const historyRes = await apiFetch(`/api/attendance/history/by-email/${encodeURIComponent(email)}`);
         if (historyRes.ok) {
           const historyData = await historyRes.json();
           setHistoryLogs(historyData);
@@ -402,8 +403,9 @@ export default function Dashboard() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setMenuVisible(false);
+    await logoutFromApi();
     router.replace('/');
   };
 
@@ -793,7 +795,6 @@ export default function Dashboard() {
                 {message !== '' && <Text style={styles.message}>{message}</Text>}
               </View>
 
-              {/* Historial de hoy */}
               <View style={[styles.historySection, { maxWidth: '100%', marginTop: 24 }]}>
                 <Text style={styles.historyTitle}>Historial de hoy</Text>
 
@@ -822,9 +823,7 @@ export default function Dashboard() {
               </View>
             </View>
 
-            {/* Columna Derecha: Estadísticas del mes y Historial Reciente */}
             <View style={styles.desktopRightCol}>
-              {/* PANEL DE ESTADÍSTICAS MENSUALES */}
               <View style={[styles.statsSection, { marginTop: 0, maxWidth: '100%' }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <Text style={[styles.historyTitle, { marginBottom: 0 }]}>Resumen del Mes</Text>
@@ -887,7 +886,6 @@ export default function Dashboard() {
                 </View>
               </View>
 
-              {/* HISTORIAL RECIENTE (ÚLTIMOS DÍAS DEL MES) */}
               {historyLogs.length > 0 && (
                 <View style={[styles.historySection, { marginTop: 24, maxWidth: '100%' }]}>
                   <Text style={styles.historyTitle}>Historial Reciente (Últimos días)</Text>
@@ -928,7 +926,6 @@ export default function Dashboard() {
                     );
                   })}
 
-                  {/* Botón Ver historial completo */}
                   {historyLogs.length > 5 && (
                     <TouchableOpacity
                       style={styles.viewFullHistoryBtn}
@@ -945,7 +942,6 @@ export default function Dashboard() {
           </View>
         ) : (
           <>
-            {/* PANEL DE ESTADÍSTICAS MENSUALES MÓVIL */}
             <View style={styles.statsSection}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <Text style={[styles.historyTitle, { marginBottom: 0 }]}>Resumen del Mes</Text>
@@ -1030,7 +1026,6 @@ export default function Dashboard() {
               {message !== '' && <Text style={styles.message}>{message}</Text>}
             </View>
 
-            {/* HISTORIAL DE HOY MÓVIL */}
             <View style={styles.historySection}>
               <Text style={styles.historyTitle}>Historial de hoy</Text>
 
@@ -1058,7 +1053,6 @@ export default function Dashboard() {
               )}
             </View>
 
-            {/* HISTORIAL RECIENTE MÓVIL */}
             {historyLogs.length > 0 && (
               <View style={[styles.historySection, { marginTop: 24, marginBottom: 20 }]}>
                 <Text style={styles.historyTitle}>Historial Reciente (Últimos días)</Text>
@@ -1099,7 +1093,6 @@ export default function Dashboard() {
                   );
                 })}
 
-                {/* Botón Ver historial completo */}
                 {historyLogs.length > 5 && (
                   <TouchableOpacity
                     style={styles.viewFullHistoryBtn}
@@ -1116,7 +1109,6 @@ export default function Dashboard() {
         )}
       </ScrollView>
 
-      {/* MODAL HISTORIAL COMPLETO */}
       <Modal visible={showFullHistory} transparent animationType="slide">
         <View style={styles.fullHistoryOverlay}>
           <View style={styles.fullHistoryContainer}>

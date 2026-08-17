@@ -1,0 +1,19 @@
+{
+  "name": "HWPerÃº - Asistencia",
+  "short_name": "Asistencia",
+  "description": "Registro web de asistencia para colaboradores de HWPerÃº",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "lang": "es-PE",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
