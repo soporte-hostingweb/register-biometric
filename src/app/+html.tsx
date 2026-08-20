@@ -9,13 +9,27 @@ export default function Root({ children }: PropsWithChildren) {
         <title>HWPerú - Asistencia</title>
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-        <meta name="theme-color" content="#121212" />
+        <meta name="theme-color" content="#051C33" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="HWPerú - Asistencia" />
         <meta name="description" content="Plataforma digital de asistencia HWPerú" />
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="icon" href="/favicon.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function () {
+                  navigator.serviceWorker.register('/push-sw.js').catch(function (error) {
+                    console.error('No se pudo registrar el service worker:', error);
+                  });
+                });
+              }
+            `,
+          }}
+        />
         <style
           dangerouslySetInnerHTML={{
             __html: `

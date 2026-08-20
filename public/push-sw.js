@@ -1,3 +1,17 @@
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.method === 'GET' && event.request.url.startsWith(self.location.origin)) {
+    event.respondWith(fetch(event.request));
+  }
+});
+
 self.addEventListener('push', (event) => {
   let payload = {};
   try {
@@ -6,11 +20,12 @@ self.addEventListener('push', (event) => {
     payload = { body: event.data ? event.data.text() : '' };
   }
 
-  const title = payload.title || 'HWPerÃº Asistencia';
+  const title = payload.title || 'HWPerú Asistencia';
   const options = {
     body: payload.body || '',
     data: payload.data || { url: '/' },
-    badge: '/favicon.png',
+    icon: '/icons/pwa-icon-192.png',
+    badge: '/icons/pwa-icon-maskable-192.png',
     tag: payload.tag || 'hwperu-asistencia',
     renotify: false,
   };
