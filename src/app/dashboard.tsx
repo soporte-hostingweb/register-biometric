@@ -436,6 +436,14 @@ export default function Dashboard() {
     });
   };
 
+  const handleConfiguracion = () => {
+    setMenuVisible(false);
+    router.push({
+      pathname: '/configuracion' as any,
+      params: { fullName, rol, email },
+    });
+  };
+
   const fecha = currentTime.toLocaleDateString('es-PE', {
     weekday: 'long',
     day: 'numeric',
@@ -776,6 +784,16 @@ export default function Dashboard() {
               <Ionicons name="person-outline" size={18} color="#1A1D29" />
               <Text style={styles.dropdownText}>Mi perfil</Text>
             </TouchableOpacity>
+
+            {rol === 'SUPER_ADMIN' && (
+              <>
+                <View style={styles.dropdownDivider} />
+                <TouchableOpacity style={styles.dropdownItem} onPress={handleConfiguracion}>
+                  <Ionicons name="settings-outline" size={18} color="#1A1D29" />
+                  <Text style={styles.dropdownText}>Configuración</Text>
+                </TouchableOpacity>
+              </>
+            )}
 
             <View style={styles.dropdownDivider} />
 
