@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch, logoutFromApi } from '../services/api';
+import AttendanceCamera from '../components/AttendanceCamera';
 import { styles } from '../styles/dashboard';
 
 Notifications.setNotificationHandler({
@@ -126,6 +127,7 @@ export default function Dashboard() {
   const [cargo, setCargo] = useState<string | null>(null);
   const [historyLogs, setHistoryLogs] = useState<any[]>([]);
   const [showFullHistory, setShowFullHistory] = useState(false);
+  const [cameraVisible, setCameraVisible] = useState(false);
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width > 768;
   const { fullName, rol, email } = useLocalSearchParams<{ fullName: string; rol: string; email: string }>();
@@ -297,12 +299,23 @@ export default function Dashboard() {
 
   const siguienteTipo: 'Entrada' | 'Salida' = tieneEntradaHoy ? 'Salida' : 'Entrada';
 
-  const handleMarcar = async () => {
+  const openCameraFlow = () => {
     if (completadoHoy) {
       setMessage('Ya registraste tu Entrada y Salida por el día de hoy');
       return;
     }
 
+    setMessage('');
+    setCameraVisible(true);
+  };
+
+  const handleMarcar = async (photoDataUrl: string) => {
+    if (!photoDataUrl) {
+      setMessage('Debes tomar una fotografía facial para registrar la asistencia');
+      return;
+    }
+
+    setCameraVisible(false);
     setLoading(true);
     setMessage('');
     try {
@@ -334,21 +347,8 @@ export default function Dashboard() {
         console.log('Error al obtener dirección:', geoErr);
       }
 
-      const nuevaMarcacion: Marcacion = {
-        id: Date.now().toString(),
-        tipo: siguienteTipo,
-        fecha: todayStr,
-        hora: new Date().toLocaleTimeString('es-PE', { timeZone: 'America/Lima' }),
-        ubicacion: direccion,
-      };
-
-      const nuevasMarcaciones = [...marcaciones, nuevaMarcacion];
-      setMarcaciones(nuevasMarcaciones);
-      const key = getStorageKey(email);
-      await AsyncStorage.setItem(key, JSON.stringify(nuevasMarcaciones));
-
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 segundos de límite
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
       try {
         const checkType = siguienteTipo === 'Entrada' ? 0 : 1;
@@ -360,6 +360,7 @@ export default function Dashboard() {
             checkType,
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
+            photoData: photoDataUrl,
           }),
           signal: controller.signal,
         });
@@ -383,6 +384,19 @@ export default function Dashboard() {
         }
         throw apiErr;
       }
+
+      const nuevaMarcacion: Marcacion = {
+        id: Date.now().toString(),
+        tipo: siguienteTipo,
+        fecha: todayStr,
+        hora: new Date().toLocaleTimeString('es-PE', { timeZone: 'America/Lima' }),
+        ubicacion: direccion,
+      };
+
+      const nuevasMarcaciones = [...marcaciones, nuevaMarcacion];
+      setMarcaciones(nuevasMarcaciones);
+      const key = getStorageKey(email);
+      await AsyncStorage.setItem(key, JSON.stringify(nuevasMarcaciones));
 
       // Refrescar el historial en las estadísticas
       try {
@@ -779,7 +793,7 @@ export default function Dashboard() {
 
                 <TouchableOpacity
                   style={[styles.markButton, (loading || completadoHoy) && styles.markButtonDisabled]}
-                  onPress={handleMarcar}
+                  onPress={openCameraFlow}
                   disabled={loading || completadoHoy}
                   activeOpacity={0.85}
                 >
@@ -1010,7 +1024,7 @@ export default function Dashboard() {
 
               <TouchableOpacity
                 style={[styles.markButton, (loading || completadoHoy) && styles.markButtonDisabled]}
-                onPress={handleMarcar}
+                onPress={openCameraFlow}
                 disabled={loading || completadoHoy}
                 activeOpacity={0.85}
               >
@@ -1185,6 +1199,13 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
+
+      <AttendanceCamera
+        visible={cameraVisible}
+        attendanceType={siguienteTipo}
+        onCancel={() => setCameraVisible(false)}
+        onConfirm={handleMarcar}
+      />
     </SafeAreaView>
   );
 }
