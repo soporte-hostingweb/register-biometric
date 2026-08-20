@@ -117,6 +117,7 @@ export const styles = StyleSheet.create({
   },
   passwordWrapper: {
     width: '100%',
+    position: 'relative',
     flexDirection: 'row',
     alignItems: 'center',
     height: 50,
@@ -128,9 +129,11 @@ export const styles = StyleSheet.create({
   },
   passwordInput: {
     flex: 1,
+    width: '100%',
     minHeight: 50,
     paddingVertical: 0,
-    paddingHorizontal: 12,
+    paddingLeft: 12,
+    paddingRight: 52,
     fontSize: 15,
     color: '#F1F5F9',
     backgroundColor: 'transparent',
@@ -139,6 +142,10 @@ export const styles = StyleSheet.create({
     includeFontPadding: false,
   },
   eyeButton: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    zIndex: 2,
     width: 44,
     alignItems: 'center',
     justifyContent: 'center',
@@ -149,23 +156,6 @@ export const styles = StyleSheet.create({
   fieldIcon: {
     marginLeft: 12,
     marginRight: 8,
-  },
-  forgotRow: {
-    width: '100%',
-    alignItems: 'flex-end',
-    marginTop: 2,
-    marginBottom: 18,
-  },
-  forgotText: {
-    color: '#A9D5FF',
-    fontSize: 12.5,
-    fontWeight: '600',
-  },
-  forgotLink: {
-    cursor: 'pointer',
-  },
-  forgotLinkPressed: {
-    opacity: 0.82,
   },
   button: {
     width: '100%',
@@ -186,26 +176,5 @@ export const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.2,
-  },
-  footer: {
-    marginTop: 16,
-    alignItems: 'center',
-    width: '100%',
-  },
-  footerText: {
-    color: '#D2DFF8',
-    fontSize: 12.5,
-  },
-  footerAction: {
-    color: '#A9D5FF',
-    fontSize: 13,
-    marginTop: 3,
-    fontWeight: '600',
-  },
-  backLinkPressed: {
-    opacity: 0.82,
-  },
-  backLink: {
-    cursor: 'pointer',
   },
 });

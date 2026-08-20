@@ -8,7 +8,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Pressable,
   Text,
   TextInput,
   TouchableOpacity,
@@ -209,16 +208,6 @@ export default function LoginScreen() {
               </View>
             </View>
 
-            <View style={styles.forgotRow}>
-              <Pressable
-                onPress={() => router.push('/forgot-password')}
-                accessibilityRole="link"
-                style={({ pressed }) => [styles.forgotLink, pressed && styles.forgotLinkPressed]}
-              >
-                <Text style={styles.forgotText}>Forgot your password?</Text>
-              </Pressable>
-            </View>
-
             <TouchableOpacity
               style={[styles.button, loading && styles.buttonDisabled]}
               onPress={handleLogin}
@@ -228,10 +217,6 @@ export default function LoginScreen() {
               <Text style={styles.buttonText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
             </TouchableOpacity>
 
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Need an account?</Text>
-              <Text style={styles.footerAction}>Contact your administrator</Text>
-            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

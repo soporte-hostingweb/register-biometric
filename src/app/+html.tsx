@@ -27,8 +27,7 @@ export default function Root({ children }: PropsWithChildren) {
               }
 
               #login-email-input,
-              #login-password-input,
-              #forgot-password-email-input {
+              #login-password-input {
                 color: #F1F5F9 !important;
                 background-color: transparent !important;
                 border: 0 !important;
@@ -38,19 +37,14 @@ export default function Root({ children }: PropsWithChildren) {
 
               #login-email-input:autofill,
               #login-password-input:autofill,
-              #forgot-password-email-input:autofill,
               #login-email-input:-webkit-autofill,
               #login-password-input:-webkit-autofill,
-              #forgot-password-email-input:-webkit-autofill,
               #login-email-input:-webkit-autofill:hover,
               #login-password-input:-webkit-autofill:hover,
-              #forgot-password-email-input:-webkit-autofill:hover,
               #login-email-input:-webkit-autofill:focus,
               #login-password-input:-webkit-autofill:focus,
-              #forgot-password-email-input:-webkit-autofill:focus,
               #login-email-input:-webkit-autofill:active,
-              #login-password-input:-webkit-autofill:active,
-              #forgot-password-email-input:-webkit-autofill:active {
+              #login-password-input:-webkit-autofill:active {
                 -webkit-text-fill-color: #F1F5F9 !important;
                 -webkit-box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.06) inset !important;
                 box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.06) inset !important;
