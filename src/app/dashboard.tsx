@@ -309,8 +309,8 @@ export default function Dashboard() {
     setCameraVisible(true);
   };
 
-  const handleMarcar = async (photoDataUrl: string) => {
-    if (!photoDataUrl) {
+  const handleMarcar = async (photoDataUrl: string, faceDescriptor: number[]) => {
+    if (!photoDataUrl || !Array.isArray(faceDescriptor) || faceDescriptor.length < 64) {
       setMessage('Debes tomar una fotografía facial para registrar la asistencia');
       return;
     }
@@ -349,6 +349,7 @@ export default function Dashboard() {
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
+      let registrationMessage = '';
 
       try {
         const checkType = siguienteTipo === 'Entrada' ? 0 : 1;
@@ -361,6 +362,8 @@ export default function Dashboard() {
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
             photoData: photoDataUrl,
+            faceDescriptor,
+            faceModel: 'human-faceres-v1',
           }),
           signal: controller.signal,
         });
@@ -376,6 +379,8 @@ export default function Dashboard() {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.message || `Error del servidor (${res.status})`);
         }
+        const registerData = await res.json().catch(() => ({}));
+        registrationMessage = registerData.message || '';
       } catch (apiErr: any) {
         clearTimeout(timeoutId);
         console.log('Aviso: Error en el registro del servidor:', apiErr);
@@ -409,7 +414,7 @@ export default function Dashboard() {
         console.log('Error refrescando estadísticas:', err);
       }
 
-      setMessage(`${siguienteTipo} registrada correctamente`);
+      setMessage(registrationMessage || `${siguienteTipo} registrada correctamente`);
     } catch (error: any) {
       setMessage(error.message || 'No se pudo registrar la asistencia');
     } finally {
