@@ -177,4 +177,22 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
+  installButton: {
+    width: '100%',
+    minHeight: 48,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(126, 195, 255, 0.72)',
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(5, 28, 51, 0.56)',
+  },
+  installButtonText: {
+    color: '#D9ECFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 });

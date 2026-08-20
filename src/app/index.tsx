@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Image,
@@ -17,12 +17,61 @@ import { API_URL, saveAccessToken } from '../services/api';
 import { completeDeviceAuthorization } from '../services/device-auth';
 import { styles } from '../styles/login';
 
+type PwaInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
+
+type PwaWindow = Window & {
+  __pwaInstallPrompt?: PwaInstallPromptEvent | null;
+};
+
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showInstallButton, setShowInstallButton] = useState(false);
   const [focusedInput, setFocusedInput] = useState<'email' | 'password' | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+
+    if (isStandalone) return;
+
+    setShowInstallButton(true);
+
+    const handleInstalled = () => setShowInstallButton(false);
+    window.addEventListener('pwa-app-installed', handleInstalled);
+
+    return () => window.removeEventListener('pwa-app-installed', handleInstalled);
+  }, []);
+
+  const handleInstall = async () => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    const pwaWindow = window as PwaWindow;
+    const installPrompt = pwaWindow.__pwaInstallPrompt;
+
+    if (!installPrompt) {
+      window.alert(
+        'El instalador todavía no está disponible. Actualiza esta página y vuelve a pulsar el botón. Si continúa igual, elimina el acceso directo anterior y borra los datos de developer.hwperu.com en Brave.',
+      );
+      return;
+    }
+
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    pwaWindow.__pwaInstallPrompt = null;
+
+    if (choice.outcome === 'accepted') {
+      setShowInstallButton(false);
+    }
+  };
 
   const handleLogin = async () => {
     const showAlert = (title: string, message: string) => {
@@ -216,6 +265,19 @@ export default function LoginScreen() {
             >
               <Text style={styles.buttonText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
             </TouchableOpacity>
+
+            {showInstallButton && (
+              <TouchableOpacity
+                style={styles.installButton}
+                onPress={handleInstall}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Instalar aplicación HWPerú"
+              >
+                <Ionicons name="download-outline" size={19} color="#D9ECFF" />
+                <Text style={styles.installButtonText}>Instalar aplicación</Text>
+              </TouchableOpacity>
+            )}
 
           </View>
         </ScrollView>

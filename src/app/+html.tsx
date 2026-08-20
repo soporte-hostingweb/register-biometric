@@ -20,6 +20,19 @@ export default function Root({ children }: PropsWithChildren) {
         <script
           dangerouslySetInnerHTML={{
             __html: `
+              window.__pwaInstallPrompt = null;
+
+              window.addEventListener('beforeinstallprompt', function (event) {
+                event.preventDefault();
+                window.__pwaInstallPrompt = event;
+                window.dispatchEvent(new Event('pwa-install-available'));
+              });
+
+              window.addEventListener('appinstalled', function () {
+                window.__pwaInstallPrompt = null;
+                window.dispatchEvent(new Event('pwa-app-installed'));
+              });
+
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function () {
                   navigator.serviceWorker.register('/push-sw.js').catch(function (error) {
