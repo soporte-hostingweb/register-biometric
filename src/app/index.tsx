@@ -1,15 +1,29 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  Image,
+  ImageBackground,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Pressable,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { API_URL, saveAccessToken } from '../services/api';
 import { completeDeviceAuthorization } from '../services/device-auth';
 import { styles } from '../styles/login';
+
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [focusedInput, setFocusedInput] = useState<'email' | 'password' | null>(null);
 
   const handleLogin = async () => {
     const showAlert = (title: string, message: string) => {
@@ -21,13 +35,13 @@ export default function LoginScreen() {
     };
 
     if (!email || !password) {
-      showAlert('Error', 'Completa todos los campos');
+      showAlert('Error', 'Please complete all fields');
       return;
     }
 
     setLoading(true);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 segundos de límite
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
 
     try {
       const response = await fetch(`${API_URL}/api/login`, {
@@ -43,8 +57,8 @@ export default function LoginScreen() {
       if (response.status === 403) {
         const errData = await response.json().catch(() => ({}));
         showAlert(
-          'Acceso Denegado',
-          errData.message || 'Tu dirección IP no está autorizada. Asegúrate de estar conectado al Wi-Fi de la oficina.'
+          'Access denied',
+          errData.message || 'Your IP is not authorized. Connect from office Wi-Fi.',
         );
         setLoading(false);
         return;
@@ -58,13 +72,12 @@ export default function LoginScreen() {
         }
 
         if (!data.user?.token) {
-          showAlert('Error', 'El servidor no devolviÃ³ un token de acceso');
+          showAlert('Error', 'Server did not return access token');
+          setLoading(false);
           return;
         }
 
         await saveAccessToken(data.user.token);
-        const userEmail = data.user.email ? data.user.email.toLowerCase().trim() : '';
-
         router.push({
           pathname: '/dashboard',
           params: {
@@ -74,17 +87,17 @@ export default function LoginScreen() {
           },
         });
       } else {
-        showAlert('Error', data.message || 'Credenciales inválidas');
+        showAlert('Error', data.message || 'Invalid credentials');
       }
     } catch (error: any) {
       clearTimeout(timeoutId);
       if (error.name === 'AbortError') {
         showAlert(
-          'Tiempo de Espera Agotado',
-          'No se pudo conectar al servidor. Asegúrate de estar en el rango de cobertura y conectado al Wi-Fi de la oficina.'
+          'Request timeout',
+          'Unable to connect to the server. Check your office Wi-Fi or data signal.',
         );
       } else {
-        showAlert('Error', 'No se pudo conectar al servidor. Verifica tu conexión a internet.');
+        showAlert('Error', 'Could not connect to the server. Verify internet connection.');
       }
     } finally {
       setLoading(false);
@@ -92,72 +105,136 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
+    <ImageBackground
+      source={require('../../assets/images/ChatGPT Image 18 ago 2026, 12_13_50.png')}
       style={styles.wrapper}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      resizeMode="cover"
     >
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.contentOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.card}>
-          <View style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
-            <Image 
-              source={require('../../assets/images/icon.png')} 
-              style={{ width: 96, height: 96, resizeMode: 'cover' }} 
-            />
-          </View>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.card}>
+            <View style={styles.hero}>
+              <View style={styles.heroImageWrap}>
+                <Image source={require('../../assets/images/icon.png')} style={styles.heroImage} />
+              </View>
+            </View>
 
-          <Text style={styles.title}>HWPerú</Text>
-          <Text style={styles.subtitle}>Digital Assistance</Text>
+            <Text style={styles.title}>Welcome to HWPerú</Text>
+            <Text style={styles.subtitle}>Digital Assistance Platform</Text>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="tucorreo@empresa.com"
-              placeholderTextColor="#A0A5B1"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-          </View>
+            <View style={styles.divider} />
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.passwordWrapper}>
-              <TextInput
-                style={styles.passwordInput}
-                placeholder="••••••••"
-                placeholderTextColor="#A0A5B1"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-              />
-              <TouchableOpacity
-                style={styles.eyeButton}
-                onPress={() => setShowPassword(!showPassword)}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Email address</Text>
+              <View
+                nativeID="login-email-field"
+                style={[
+                  styles.fieldWrapper,
+                  focusedInput === 'email' && styles.fieldWrapperFocus,
+                ]}
               >
                 <Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={20}
-                  color="#8A8F9A"
+                  name="mail-outline"
+                  size={18}
+                  color={focusedInput === 'email' ? '#7EC3FF' : '#C6D8F5'}
+                  style={styles.fieldIcon}
                 />
-              </TouchableOpacity>
+                <TextInput
+                  nativeID="login-email-input"
+                  style={styles.input}
+                  placeholder="you@company.com"
+                  placeholderTextColor="#D1DBEF"
+                  autoComplete="email"
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                  onFocus={() => setFocusedInput('email')}
+                  onBlur={() => setFocusedInput((current) => (current === 'email' ? null : current))}
+                  selectionColor="#005FF7"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Password</Text>
+              <View
+                nativeID="login-password-field"
+                style={[
+                  styles.passwordWrapper,
+                  focusedInput === 'password' && styles.fieldWrapperFocus,
+                ]}
+              >
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={18}
+                  color={focusedInput === 'password' ? '#7EC3FF' : '#C6D8F5'}
+                  style={styles.fieldIcon}
+                />
+                <TextInput
+                  nativeID="login-password-input"
+                  style={styles.passwordInput}
+                  placeholder="Enter your password"
+                  placeholderTextColor="#D1DBEF"
+                  autoComplete="current-password"
+                  value={password}
+                  onChangeText={setPassword}
+                  textContentType="password"
+                  secureTextEntry={!showPassword}
+                  onFocus={() => setFocusedInput('password')}
+                  onBlur={() =>
+                    setFocusedInput((current) => (current === 'password' ? null : current))
+                  }
+                  selectionColor="#005FF7"
+                />
+                <TouchableOpacity
+                  style={styles.eyeButton}
+                  onPress={() => setShowPassword(!showPassword)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color={focusedInput === 'password' ? '#7EC3FF' : '#C6D8F5'}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.forgotRow}>
+              <Pressable
+                onPress={() => router.push('/forgot-password')}
+                accessibilityRole="link"
+                style={({ pressed }) => [styles.forgotLink, pressed && styles.forgotLinkPressed]}
+              >
+                <Text style={styles.forgotText}>Forgot your password?</Text>
+              </Pressable>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.buttonText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
+            </TouchableOpacity>
+
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>Need an account?</Text>
+              <Text style={styles.footerAction}>Contact your administrator</Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.buttonText}>{loading ? 'Ingresando...' : 'Login in →'}</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
 }

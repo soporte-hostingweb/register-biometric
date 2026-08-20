@@ -16,7 +16,7 @@ export default function RootLayout() {
   });
 
   if (!fontsLoaded) {
-    return <View style={{ flex: 1, backgroundColor: '#F4F6F9' }} />;
+    return <View style={{ flex: 1, backgroundColor: '#051C33' }} />;
   }
 
   return (

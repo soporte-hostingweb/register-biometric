@@ -32,6 +32,7 @@ yarn-error.*
 
 # local env files
 .env*.local
+consultas/backend/config/vapid.json
 
 # typescript
 *.tsbuildinfo

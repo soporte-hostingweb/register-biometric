@@ -1,7 +1,7 @@
 {
-  "name": "HWPerÃº - Asistencia",
-  "short_name": "Asistencia",
-  "description": "Registro web de asistencia para colaboradores de HWPerÃº",
+  "name": "HWPerú - Asistencia",
+  "short_name": "HWPerú",
+  "description": "Registro web de asistencia para colaboradores de HWPerú",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -10,9 +10,9 @@
   "lang": "es-PE",
   "icons": [
     {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/favicon.png",
+      "sizes": "128x128",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]
