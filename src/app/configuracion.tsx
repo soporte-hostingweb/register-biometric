@@ -12,6 +12,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { apiFetch } from '../services/api';
@@ -58,6 +59,8 @@ const formatDate = (value?: string | null) => {
 
 export default function ConfiguracionScreen() {
   const { fullName, email, rol } = useLocalSearchParams<{ fullName: string; email: string; rol: string }>();
+  const { width } = useWindowDimensions();
+  const isMobile = width <= 600;
   const [users, setUsers] = useState<AuthorizedDeviceUser[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -204,7 +207,7 @@ export default function ConfiguracionScreen() {
 
   return (
     <View style={styles.page}>
-      <View style={styles.header}>
+      <View style={[styles.header, isMobile && styles.headerMobile]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.replace({ pathname: '/dashboard', params: { fullName, email, rol } })}
@@ -213,35 +216,35 @@ export default function ConfiguracionScreen() {
         </TouchableOpacity>
         <View style={styles.headerText}>
           <Text style={styles.eyebrow}>SUPER ADMINISTRACIÓN</Text>
-          <Text style={styles.title}>Configuración</Text>
+          <Text style={[styles.title, isMobile && styles.titleMobile]}>Configuración</Text>
           <Text style={styles.subtitle}>Administra las computadoras autorizadas de los trabajadores.</Text>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.tabs}>
+      <ScrollView contentContainerStyle={[styles.content, isMobile && styles.contentMobile]} horizontal={false}>
+        <View style={[styles.tabs, isMobile && styles.tabsMobile]}>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'devices' && styles.activeTab]}
+            style={[styles.tab, isMobile && styles.tabMobile, activeTab === 'devices' && styles.activeTab]}
             onPress={() => setActiveTab('devices')}
           >
             <Ionicons name="desktop-outline" size={18} color={activeTab === 'devices' ? '#071C35' : '#9AB1C7'} />
-            <Text style={[styles.tabText, activeTab === 'devices' && styles.activeTabText]}>Dispositivos autorizados</Text>
+            <Text numberOfLines={1} style={[styles.tabText, isMobile && styles.tabTextMobile, activeTab === 'devices' && styles.activeTabText]}>{isMobile ? 'Dispositivos' : 'Dispositivos autorizados'}</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'evidence' && styles.activeTab]}
+            style={[styles.tab, isMobile && styles.tabMobile, activeTab === 'evidence' && styles.activeTab]}
             onPress={() => {
               setActiveTab('evidence');
               if (evidence.length === 0) loadEvidence();
             }}
           >
             <Ionicons name="images-outline" size={18} color={activeTab === 'evidence' ? '#071C35' : '#9AB1C7'} />
-            <Text style={[styles.tabText, activeTab === 'evidence' && styles.activeTabText]}>Evidencias faciales</Text>
+            <Text numberOfLines={1} style={[styles.tabText, isMobile && styles.tabTextMobile, activeTab === 'evidence' && styles.activeTabText]}>{isMobile ? 'Evidencias' : 'Evidencias faciales'}</Text>
           </TouchableOpacity>
         </View>
 
         {activeTab === 'devices' && (
           <>
-        <View style={styles.toolbar}>
+        <View style={[styles.toolbar, isMobile && styles.toolbarMobile]}>
           <View style={styles.searchBox}>
             <Ionicons name="search-outline" size={19} color="#7F9BB8" />
             <TextInput
@@ -277,8 +280,8 @@ export default function ConfiguracionScreen() {
               const hasDevice = Boolean(user.deviceId && user.isActive);
               const isOwnAccount = Number(user.userId) > 0 && user.email?.toLowerCase() === email?.toLowerCase();
               return (
-                <View style={styles.card} key={user.userId}>
-                  <View style={styles.cardTop}>
+                <View style={[styles.card, isMobile && styles.cardMobile]} key={user.userId}>
+                  <View style={[styles.cardTop, isMobile && styles.cardTopMobile]}>
                     <View style={styles.userIcon}>
                       <Ionicons name="person-outline" size={22} color="#77C3FF" />
                     </View>
@@ -331,7 +334,7 @@ export default function ConfiguracionScreen() {
 
         {activeTab === 'evidence' && (
           <>
-            <View style={styles.toolbar}>
+            <View style={[styles.toolbar, isMobile && styles.toolbarMobile]}>
               <View style={styles.searchBox}>
                 <Ionicons name="search-outline" size={19} color="#7F9BB8" />
                 <TextInput
@@ -364,7 +367,7 @@ export default function ConfiguracionScreen() {
             ) : (
               <View style={styles.evidenceList}>
                 {evidence.map(item => (
-                  <View style={styles.evidenceCard} key={`${item.kind || 'attendance'}-${item.evidenceId}`}>
+                  <View style={[styles.evidenceCard, isMobile && styles.evidenceCardMobile]} key={`${item.kind || 'attendance'}-${item.evidenceId}`}>
                     <View style={styles.evidenceIcon}>
                       <Ionicons name="scan-outline" size={25} color="#76C4FF" />
                     </View>
@@ -385,7 +388,7 @@ export default function ConfiguracionScreen() {
                         {item.kind === 'enrollment' ? 'Plantilla de registro facial' : item.locationSource || 'Ubicación no disponible'}
                       </Text>
                     </View>
-                    <TouchableOpacity style={styles.photoButton} onPress={() => openPhoto(item)}>
+                    <TouchableOpacity style={[styles.photoButton, isMobile && styles.photoButtonMobile]} onPress={() => openPhoto(item)}>
                       <Ionicons name="eye-outline" size={19} color="#071C35" />
                       <Text style={styles.photoButtonText}>Ver fotografía</Text>
                     </TouchableOpacity>
@@ -399,7 +402,7 @@ export default function ConfiguracionScreen() {
 
       <Modal visible={Boolean(selectedEvidence)} transparent animationType="fade" onRequestClose={closePhoto}>
         <Pressable style={styles.photoBackdrop} onPress={closePhoto}>
-          <Pressable style={styles.photoModal} onPress={() => {}}>
+          <Pressable style={[styles.photoModal, isMobile && styles.photoModalMobile]} onPress={() => {}}>
             <View style={styles.photoHeader}>
               <View>
                 <Text style={styles.eyebrow}>{selectedEvidence?.kind === 'enrollment' ? 'ROSTRO REGISTRADO' : 'EVIDENCIA FACIAL'}</Text>
@@ -410,7 +413,7 @@ export default function ConfiguracionScreen() {
                 <Ionicons name="close" size={23} color="#DCEBFA" />
               </TouchableOpacity>
             </View>
-            <View style={styles.photoFrame}>
+            <View style={[styles.photoFrame, isMobile && styles.photoFrameMobile]}>
               {photoLoading ? (
                 <ActivityIndicator color="#65B9FF" size="large" />
               ) : photoUrl ? (
@@ -430,18 +433,25 @@ export default function ConfiguracionScreen() {
 const styles: Record<string, any> = {
   page: { flex: 1, minHeight: '100vh', backgroundColor: '#071321' },
   header: { flexDirection: 'row', alignItems: 'center', gap: 15, paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: '#18314A', backgroundColor: '#0B1929' },
+  headerMobile: { alignItems: 'flex-start', gap: 10, paddingHorizontal: 14, paddingTop: 18, paddingBottom: 16 },
   backButton: { width: 42, height: 42, borderRadius: 12, backgroundColor: '#152A40', alignItems: 'center', justifyContent: 'center' },
   headerText: { flex: 1 },
   eyebrow: { color: '#65B9FF', fontSize: 10, fontWeight: '800', letterSpacing: 1.3 },
   title: { color: '#FFFFFF', fontSize: 25, fontWeight: '800', marginTop: 2 },
+  titleMobile: { fontSize: 22 },
   subtitle: { color: '#94AAC0', fontSize: 13, marginTop: 4 },
   content: { width: '100%', maxWidth: 1200, alignSelf: 'center', padding: 24, paddingBottom: 50 },
+  contentMobile: { padding: 12, paddingBottom: 36 },
   tabs: { flexDirection: 'row', alignSelf: 'flex-start', gap: 8, padding: 5, borderRadius: 13, backgroundColor: '#0D1D2E', borderWidth: 1, borderColor: '#213D56', marginBottom: 18 },
+  tabsMobile: { alignSelf: 'stretch', width: '100%', gap: 4 },
   tab: { minHeight: 40, paddingHorizontal: 15, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  tabMobile: { flex: 1, minWidth: 0, paddingHorizontal: 7, gap: 5 },
   activeTab: { backgroundColor: '#77C3FF' },
   tabText: { color: '#9AB1C7', fontSize: 12.5, fontWeight: '700' },
+  tabTextMobile: { fontSize: 11.5, flexShrink: 1 },
   activeTabText: { color: '#071C35', fontWeight: '900' },
   toolbar: { flexDirection: 'row', gap: 12, marginBottom: 18 },
+  toolbarMobile: { flexDirection: 'column', gap: 9 },
   searchBox: { flex: 1, minHeight: 48, borderRadius: 12, borderWidth: 1, borderColor: '#29445E', backgroundColor: '#0F2032', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 9 },
   searchInput: { flex: 1, color: '#FFFFFF', fontSize: 14, outlineStyle: 'none' },
   refreshButton: { minHeight: 48, paddingHorizontal: 17, borderRadius: 12, backgroundColor: '#77C3FF', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
@@ -454,7 +464,9 @@ const styles: Record<string, any> = {
   emptyTitle: { color: '#B7CADC', fontSize: 16, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
   card: { flexGrow: 1, flexBasis: 470, maxWidth: 575, padding: 17, borderRadius: 16, borderWidth: 1, borderColor: '#213D56', backgroundColor: '#0D1D2E' },
+  cardMobile: { flexBasis: 'auto', flexGrow: 0, width: '100%', maxWidth: '100%', padding: 14 },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  cardTopMobile: { flexWrap: 'wrap', alignItems: 'flex-start' },
   userIcon: { width: 43, height: 43, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#17304A' },
   userInfo: { flex: 1, minWidth: 0 },
   userName: { color: '#F7FAFD', fontSize: 15, fontWeight: '800' },
@@ -475,18 +487,22 @@ const styles: Record<string, any> = {
   revokeText: { color: '#FFD6D6', fontSize: 12.5, fontWeight: '800' },
   evidenceList: { gap: 11 },
   evidenceCard: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 13, padding: 15, borderRadius: 14, borderWidth: 1, borderColor: '#213D56', backgroundColor: '#0D1D2E' },
+  evidenceCardMobile: { flexDirection: 'column', alignItems: 'stretch', padding: 13 },
   evidenceIcon: { width: 46, height: 46, borderRadius: 13, backgroundColor: '#17304A', alignItems: 'center', justifyContent: 'center' },
   evidenceInfo: { flex: 1, minWidth: 0 },
   evidenceMeta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 5 },
   locationText: { color: '#5FAEEA', fontSize: 11, marginTop: 5 },
   photoButton: { minHeight: 41, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#77C3FF', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  photoButtonMobile: { width: '100%', marginTop: 4 },
   photoButtonText: { color: '#071C35', fontSize: 12, fontWeight: '900' },
   photoBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.84)', alignItems: 'center', justifyContent: 'center', padding: 18 },
   photoModal: { width: '100%', maxWidth: 720, maxHeight: '92vh', borderRadius: 18, borderWidth: 1, borderColor: '#2A4965', backgroundColor: '#0D1D2E', padding: 18 },
+  photoModalMobile: { padding: 12, maxHeight: '88vh', borderRadius: 14 },
   photoHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   photoTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '800', marginTop: 3 },
   closePhotoButton: { width: 39, height: 39, borderRadius: 20, backgroundColor: '#18314A', alignItems: 'center', justifyContent: 'center' },
   photoFrame: { width: '100%', minHeight: 320, maxHeight: '68vh', aspectRatio: 4 / 3, backgroundColor: '#040B12', borderRadius: 13, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  photoFrameMobile: { minHeight: 210, maxHeight: '58vh' },
   photoImage: { width: '100%', height: '100%' },
   photoPrivacy: { color: '#7089A1', fontSize: 10.5, textAlign: 'center', marginTop: 11 },
 };

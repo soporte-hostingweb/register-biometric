@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Platform, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { apiFetch } from '../services/api';
 
 type Empleado = {
@@ -126,7 +126,7 @@ export default function PerfilScreen() {
     : [];
 
   return (
-    <View style={[styles.container, isDesktop && { paddingTop: 70 }]}>
+    <View style={[styles.container, isDesktop ? { paddingTop: 70 } : styles.mobileContainer]}>
       {isDesktop && (
         <View style={styles.desktopNavbar}>
           <TouchableOpacity style={styles.desktopNavBack} onPress={() => router.back()}>
@@ -203,7 +203,11 @@ export default function PerfilScreen() {
           </View>
         </View>
       ) : (
-        <>
+        <ScrollView
+          style={styles.mobileScroll}
+          contentContainerStyle={styles.mobileScrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
               <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
@@ -249,7 +253,7 @@ export default function PerfilScreen() {
                 </View>
               ))}
           </View>
-        </>
+        </ScrollView>
       )}
     </View>
   );
@@ -260,6 +264,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
     justifyContent: 'center',
+  },
+  mobileContainer: {
+    justifyContent: 'flex-start',
+    minHeight: '100vh',
+  },
+  mobileScroll: {
+    flex: 1,
+    width: '100%',
+  },
+  mobileScrollContent: {
+    flexGrow: 1,
+    paddingBottom: 28,
   },
   header: {
     backgroundColor: '#1A2B4C',
