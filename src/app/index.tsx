@@ -43,12 +43,20 @@ export default function LoginScreen() {
 
     if (isStandalone) return;
 
-    setShowInstallButton(true);
+    const updateInstallAvailability = () => {
+      const pwaWindow = window as PwaWindow;
+      setShowInstallButton(Boolean(pwaWindow.__pwaInstallPrompt));
+    };
 
     const handleInstalled = () => setShowInstallButton(false);
+    updateInstallAvailability();
+    window.addEventListener('pwa-install-ready', updateInstallAvailability);
     window.addEventListener('pwa-app-installed', handleInstalled);
 
-    return () => window.removeEventListener('pwa-app-installed', handleInstalled);
+    return () => {
+      window.removeEventListener('pwa-install-ready', updateInstallAvailability);
+      window.removeEventListener('pwa-app-installed', handleInstalled);
+    };
   }, []);
 
   const handleInstall = async () => {
