@@ -17,7 +17,7 @@ export type EnrollmentCapture = {
   faceDescriptor: number[];
 };
 
-const enrollmentAngles: EnrollmentCapture['angle'][] = ['front', 'left', 'right'];
+const enrollmentAngles: EnrollmentCapture['angle'][] = ['right', 'left', 'front'];
 const enrollmentLabels = { front: 'Mira de frente', left: 'Gira hacia tu izquierda', right: 'Gira hacia tu derecha' };
 
 const VideoElement = 'video' as any;
@@ -30,7 +30,7 @@ export default function AttendanceCamera({
   onCancel,
   onConfirm,
 }: AttendanceCameraProps) {
-  const [step, setStep] = useState<'tips' | 'camera'>('tips');
+  const [step, setStep] = useState<'tips' | 'pose' | 'camera'>('tips');
   const [error, setError] = useState('');
   const [startingCamera, setStartingCamera] = useState(false);
   const [scanMessage, setScanMessage] = useState('Preparando análisis facial…');
@@ -103,11 +103,13 @@ export default function AttendanceCamera({
       const captures = [...enrollmentCapturesRef.current, { angle, photoData: capturedPhoto, faceDescriptor }];
       enrollmentCapturesRef.current = captures;
       if (captures.length < 3) {
+        stopCamera();
         progressRef.current = 0;
         processingRef.current = false;
         setScanProgress(0);
         setProcessing(false);
         setEnrollmentIndex(captures.length);
+        setStep('pose');
         return;
       }
       stopCamera();
@@ -240,7 +242,7 @@ export default function AttendanceCamera({
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
               <TouchableOpacity
                 style={[styles.primaryButton, startingCamera && styles.disabledButton]}
-                onPress={startCamera}
+                onPress={mode === 'enrollment' ? () => setStep('pose') : startCamera}
                 disabled={startingCamera}
               >
                 <Ionicons name="camera-outline" size={21} color="#071C35" />
@@ -251,6 +253,36 @@ export default function AttendanceCamera({
                       ? 'Registrar mi rostro'
                       : 'Iniciar verificación facial'}
                 </Text>
+              </TouchableOpacity>
+            </View>
+          ) : step === 'pose' ? (
+            <View style={styles.poseCard}>
+              <View style={styles.poseIcon}>
+                <Ionicons
+                  name={enrollmentAngles[enrollmentIndex] === 'right'
+                    ? 'arrow-forward-outline'
+                    : enrollmentAngles[enrollmentIndex] === 'left'
+                      ? 'arrow-back-outline'
+                      : 'person-outline'}
+                  size={58}
+                  color="#65B9FF"
+                />
+              </View>
+              <Text style={styles.poseStep}>CAPTURA {enrollmentIndex + 1} DE 3</Text>
+              <Text style={styles.poseTitle}>{enrollmentLabels[enrollmentAngles[enrollmentIndex]]}</Text>
+              <Text style={styles.poseDescription}>
+                {enrollmentAngles[enrollmentIndex] === 'front'
+                  ? 'Mantén la cabeza recta y mira directamente a la cámara.'
+                  : `Gira lentamente la cara hacia tu ${enrollmentAngles[enrollmentIndex] === 'right' ? 'derecha' : 'izquierda'}, sin mover los hombros.`}
+              </Text>
+              <Text style={styles.poseDescription}>La captura será automática cuando el círculo verde se complete.</Text>
+              <TouchableOpacity
+                style={[styles.primaryButton, startingCamera && styles.disabledButton]}
+                onPress={startCamera}
+                disabled={startingCamera}
+              >
+                <Ionicons name="camera-outline" size={21} color="#071C35" />
+                <Text style={styles.primaryButtonText}>{startingCamera ? 'Abriendo cámara…' : 'Continuar'}</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -312,4 +344,9 @@ const styles: Record<string, any> = {
   progressStatus: { alignItems: 'center', marginTop: 14 },
   progressStatusText: { color: '#79E7B0', fontSize: 15, fontWeight: '800' },
   poseInstruction: { color: '#7EC3FF', fontSize: 14, fontWeight: '800', textAlign: 'center', marginTop: 12 },
+  poseCard: { alignItems: 'center', paddingVertical: 12 },
+  poseIcon: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#142D48', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  poseStep: { color: '#65B9FF', fontSize: 11, fontWeight: '900', letterSpacing: 1.2 },
+  poseTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', textAlign: 'center', marginTop: 8 },
+  poseDescription: { color: '#AFC3D8', fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 10, maxWidth: 390 },
 };
