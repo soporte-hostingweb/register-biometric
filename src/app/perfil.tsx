@@ -16,6 +16,7 @@ type Empleado = {
   entryTime: string | null;
   exitTime: string | null;
   email: string | null;
+  corporateEmail?: string | null;
 };
 
 export default function PerfilScreen() {
@@ -52,20 +53,18 @@ export default function PerfilScreen() {
   useEffect(() => {
     const fetchPerfil = async () => {
       try {
-        const response = await apiFetch('/api/empleados');
-        const data = await response.json();
+        const response = await apiFetch('/api/auth/profile');
+        const data = await response.json().catch(() => null);
 
-        const encontrado = data.find(
-          (emp: Empleado) => emp.email?.toLowerCase() === email?.toLowerCase()
-        );
-
-        if (encontrado) {
-          setEmpleado(encontrado);
-        } else {
-          setError('No se encontraron datos de empleado para este usuario');
+        if (!response.ok) {
+          throw new Error(data?.details || data?.message || 'No se pudo cargar el perfil');
         }
-      } catch (err) {
-        setError('No se pudo conectar al servidor');
+        if (!data?.employee) {
+          throw new Error('El servidor devolvió una respuesta de perfil inválida');
+        }
+        setEmpleado(data.employee as Empleado);
+      } catch (err: any) {
+        setError(err?.message || 'No se pudo conectar al servidor');
       } finally {
         setLoading(false);
       }
