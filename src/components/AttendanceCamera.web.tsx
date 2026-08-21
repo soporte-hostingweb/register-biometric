@@ -159,7 +159,11 @@ export default function AttendanceCamera({
           const averagedEmbedding = samples[0].map((_, index) =>
             samples.reduce((sum, sample) => sum + sample[index], 0) / samples.length,
           );
-          capturePhoto(averagedEmbedding);
+          const magnitude = Math.sqrt(averagedEmbedding.reduce((sum, value) => sum + value * value, 0));
+          const normalizedEmbedding = magnitude > 0
+            ? averagedEmbedding.map((value) => value / magnitude)
+            : averagedEmbedding;
+          capturePhoto(normalizedEmbedding);
           return;
         }
       } catch (scanError: any) {

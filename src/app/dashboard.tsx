@@ -427,7 +427,10 @@ export default function Dashboard() {
 
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.message || `Error del servidor (${res.status})`);
+          const similarityDetail = errData.code === 'FACE_NOT_MATCHED' && Number.isFinite(Number(errData.similarity))
+            ? ` Coincidencia detectada: ${Math.round(Number(errData.similarity) * 100)}%.`
+            : '';
+          throw new Error(`${errData.message || `Error del servidor (${res.status})`}${similarityDetail}`);
         }
         const registerData = await res.json().catch(() => ({}));
         registrationMessage = registerData.message || '';
