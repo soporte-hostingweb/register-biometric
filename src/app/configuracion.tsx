@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -28,6 +30,21 @@ type AuthorizedDeviceUser = {
   isActive?: boolean | null;
 };
 
+type AttendanceEvidence = {
+  evidenceId: number;
+  attendanceLogId: number;
+  employeeId: number;
+  employeeName: string;
+  email?: string | null;
+  markedAt?: string | null;
+  checkType: number;
+  locationSource?: string | null;
+  photoBytes?: number;
+  capturedAt: string;
+  captureIp?: string | null;
+  captureUserAgent?: string | null;
+};
+
 const formatDate = (value?: string | null) => {
   if (!value) return 'Sin registro';
   return new Date(value).toLocaleString('es-PE', {
@@ -45,6 +62,12 @@ export default function ConfiguracionScreen() {
   const [revokingUserId, setRevokingUserId] = useState<number | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState<'devices' | 'evidence'>('devices');
+  const [evidence, setEvidence] = useState<AttendanceEvidence[]>([]);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [selectedEvidence, setSelectedEvidence] = useState<AttendanceEvidence | null>(null);
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [photoLoading, setPhotoLoading] = useState(false);
 
   const loadDevices = async () => {
     setLoading(true);
@@ -60,6 +83,53 @@ export default function ConfiguracionScreen() {
       setLoading(false);
     }
   };
+
+  const loadEvidence = async () => {
+    setEvidenceLoading(true);
+    setError('');
+    try {
+      const query = search.trim() ? `?q=${encodeURIComponent(search.trim())}` : '';
+      const response = await apiFetch(`/api/admin/attendance-evidence${query}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || 'No se pudieron cargar las evidencias.');
+      setEvidence(data.evidence || []);
+    } catch (loadError: any) {
+      setError(loadError.message || 'No se pudieron cargar las evidencias.');
+    } finally {
+      setEvidenceLoading(false);
+    }
+  };
+
+  const closePhoto = () => {
+    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    setPhotoUrl('');
+    setSelectedEvidence(null);
+  };
+
+  const openPhoto = async (item: AttendanceEvidence) => {
+    setSelectedEvidence(item);
+    setPhotoLoading(true);
+    setError('');
+    try {
+      const response = await apiFetch(`/api/admin/attendance-evidence/${item.evidenceId}/photo`);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || 'No se pudo abrir la fotografía.');
+      }
+      const blob = await response.blob();
+      if (photoUrl) URL.revokeObjectURL(photoUrl);
+      setPhotoUrl(URL.createObjectURL(blob));
+    } catch (photoError: any) {
+      setSelectedEvidence(null);
+      setError(photoError.message || 'No se pudo abrir la fotografía.');
+    } finally {
+      setPhotoLoading(false);
+    }
+  };
+
+  useEffect(() => () => {
+    if (photoUrl) URL.revokeObjectURL(photoUrl);
+  }, [photoUrl]);
 
   useEffect(() => {
     if (rol !== 'SUPER_ADMIN') {
@@ -127,6 +197,28 @@ export default function ConfiguracionScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.tabs}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'devices' && styles.activeTab]}
+            onPress={() => setActiveTab('devices')}
+          >
+            <Ionicons name="desktop-outline" size={18} color={activeTab === 'devices' ? '#071C35' : '#9AB1C7'} />
+            <Text style={[styles.tabText, activeTab === 'devices' && styles.activeTabText]}>Dispositivos autorizados</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'evidence' && styles.activeTab]}
+            onPress={() => {
+              setActiveTab('evidence');
+              if (evidence.length === 0) loadEvidence();
+            }}
+          >
+            <Ionicons name="images-outline" size={18} color={activeTab === 'evidence' ? '#071C35' : '#9AB1C7'} />
+            <Text style={[styles.tabText, activeTab === 'evidence' && styles.activeTabText]}>Evidencias faciales</Text>
+          </TouchableOpacity>
+        </View>
+
+        {activeTab === 'devices' && (
+          <>
         <View style={styles.toolbar}>
           <View style={styles.searchBox}>
             <Ionicons name="search-outline" size={19} color="#7F9BB8" />
@@ -212,7 +304,97 @@ export default function ConfiguracionScreen() {
             })}
           </View>
         )}
+          </>
+        )}
+
+        {activeTab === 'evidence' && (
+          <>
+            <View style={styles.toolbar}>
+              <View style={styles.searchBox}>
+                <Ionicons name="search-outline" size={19} color="#7F9BB8" />
+                <TextInput
+                  value={search}
+                  onChangeText={setSearch}
+                  onSubmitEditing={loadEvidence}
+                  placeholder="Buscar empleado o correo"
+                  placeholderTextColor="#70859B"
+                  style={styles.searchInput}
+                />
+              </View>
+              <TouchableOpacity style={styles.refreshButton} onPress={loadEvidence} disabled={evidenceLoading}>
+                <Ionicons name="search-outline" size={19} color="#071C35" />
+                <Text style={styles.refreshText}>Buscar</Text>
+              </TouchableOpacity>
+            </View>
+
+            {error ? <Text style={styles.errorMessage}>{error}</Text> : null}
+
+            {evidenceLoading ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator color="#65B9FF" size="large" />
+                <Text style={styles.loadingText}>Cargando evidencias…</Text>
+              </View>
+            ) : evidence.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Ionicons name="images-outline" size={42} color="#58748F" />
+                <Text style={styles.emptyTitle}>No hay evidencias faciales</Text>
+              </View>
+            ) : (
+              <View style={styles.evidenceList}>
+                {evidence.map(item => (
+                  <View style={styles.evidenceCard} key={item.evidenceId}>
+                    <View style={styles.evidenceIcon}>
+                      <Ionicons name="scan-outline" size={25} color="#76C4FF" />
+                    </View>
+                    <View style={styles.evidenceInfo}>
+                      <Text style={styles.userName}>{item.employeeName || 'Empleado'}</Text>
+                      <Text style={styles.userEmail}>{item.email || `Empleado #${item.employeeId}`}</Text>
+                      <View style={styles.evidenceMeta}>
+                        <Text style={styles.detailText}>{item.checkType === 0 ? 'Entrada' : 'Salida'}</Text>
+                        <Text style={styles.detailText}>•</Text>
+                        <Text style={styles.detailText}>{formatDate(item.markedAt || item.capturedAt)}</Text>
+                        <Text style={styles.detailText}>• IP: {item.captureIp || 'No disponible'}</Text>
+                      </View>
+                      <Text style={styles.locationText}>{item.locationSource || 'Ubicación no disponible'}</Text>
+                    </View>
+                    <TouchableOpacity style={styles.photoButton} onPress={() => openPhoto(item)}>
+                      <Ionicons name="eye-outline" size={19} color="#071C35" />
+                      <Text style={styles.photoButtonText}>Ver fotografía</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
+        )}
       </ScrollView>
+
+      <Modal visible={Boolean(selectedEvidence)} transparent animationType="fade" onRequestClose={closePhoto}>
+        <Pressable style={styles.photoBackdrop} onPress={closePhoto}>
+          <Pressable style={styles.photoModal} onPress={() => {}}>
+            <View style={styles.photoHeader}>
+              <View>
+                <Text style={styles.eyebrow}>EVIDENCIA FACIAL</Text>
+                <Text style={styles.photoTitle}>{selectedEvidence?.employeeName}</Text>
+                <Text style={styles.userEmail}>{formatDate(selectedEvidence?.markedAt || selectedEvidence?.capturedAt)}</Text>
+              </View>
+              <TouchableOpacity style={styles.closePhotoButton} onPress={closePhoto}>
+                <Ionicons name="close" size={23} color="#DCEBFA" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.photoFrame}>
+              {photoLoading ? (
+                <ActivityIndicator color="#65B9FF" size="large" />
+              ) : photoUrl ? (
+                <Image source={{ uri: photoUrl }} style={styles.photoImage} resizeMode="contain" />
+              ) : (
+                <Text style={styles.errorMessage}>No se pudo cargar la fotografía.</Text>
+              )}
+            </View>
+            <Text style={styles.photoPrivacy}>Acceso restringido a SUPER_ADMIN · No compartir sin autorización.</Text>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -226,6 +408,11 @@ const styles: Record<string, any> = {
   title: { color: '#FFFFFF', fontSize: 25, fontWeight: '800', marginTop: 2 },
   subtitle: { color: '#94AAC0', fontSize: 13, marginTop: 4 },
   content: { width: '100%', maxWidth: 1200, alignSelf: 'center', padding: 24, paddingBottom: 50 },
+  tabs: { flexDirection: 'row', alignSelf: 'flex-start', gap: 8, padding: 5, borderRadius: 13, backgroundColor: '#0D1D2E', borderWidth: 1, borderColor: '#213D56', marginBottom: 18 },
+  tab: { minHeight: 40, paddingHorizontal: 15, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  activeTab: { backgroundColor: '#77C3FF' },
+  tabText: { color: '#9AB1C7', fontSize: 12.5, fontWeight: '700' },
+  activeTabText: { color: '#071C35', fontWeight: '900' },
   toolbar: { flexDirection: 'row', gap: 12, marginBottom: 18 },
   searchBox: { flex: 1, minHeight: 48, borderRadius: 12, borderWidth: 1, borderColor: '#29445E', backgroundColor: '#0F2032', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 9 },
   searchInput: { flex: 1, color: '#FFFFFF', fontSize: 14, outlineStyle: 'none' },
@@ -258,4 +445,20 @@ const styles: Record<string, any> = {
   revokeButton: { marginTop: 14, minHeight: 44, borderRadius: 11, backgroundColor: '#57232A', borderWidth: 1, borderColor: '#80404A', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   disabledButton: { opacity: 0.42 },
   revokeText: { color: '#FFD6D6', fontSize: 12.5, fontWeight: '800' },
+  evidenceList: { gap: 11 },
+  evidenceCard: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 13, padding: 15, borderRadius: 14, borderWidth: 1, borderColor: '#213D56', backgroundColor: '#0D1D2E' },
+  evidenceIcon: { width: 46, height: 46, borderRadius: 13, backgroundColor: '#17304A', alignItems: 'center', justifyContent: 'center' },
+  evidenceInfo: { flex: 1, minWidth: 0 },
+  evidenceMeta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 5 },
+  locationText: { color: '#5FAEEA', fontSize: 11, marginTop: 5 },
+  photoButton: { minHeight: 41, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#77C3FF', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  photoButtonText: { color: '#071C35', fontSize: 12, fontWeight: '900' },
+  photoBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.84)', alignItems: 'center', justifyContent: 'center', padding: 18 },
+  photoModal: { width: '100%', maxWidth: 720, maxHeight: '92vh', borderRadius: 18, borderWidth: 1, borderColor: '#2A4965', backgroundColor: '#0D1D2E', padding: 18 },
+  photoHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  photoTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '800', marginTop: 3 },
+  closePhotoButton: { width: 39, height: 39, borderRadius: 20, backgroundColor: '#18314A', alignItems: 'center', justifyContent: 'center' },
+  photoFrame: { width: '100%', minHeight: 320, maxHeight: '68vh', aspectRatio: 4 / 3, backgroundColor: '#040B12', borderRadius: 13, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  photoImage: { width: '100%', height: '100%' },
+  photoPrivacy: { color: '#7089A1', fontSize: 10.5, textAlign: 'center', marginTop: 11 },
 };
