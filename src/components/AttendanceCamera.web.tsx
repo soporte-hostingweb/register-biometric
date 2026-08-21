@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, Pressable, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { analyzeFace, loadFaceEngine } from '../services/face-biometric.web';
 
 type AttendanceCameraProps = {
@@ -30,6 +30,8 @@ export default function AttendanceCamera({
   onCancel,
   onConfirm,
 }: AttendanceCameraProps) {
+  const { width: viewportWidth } = useWindowDimensions();
+  const compactCamera = viewportWidth <= 600;
   const [step, setStep] = useState<'tips' | 'pose' | 'camera'>('tips');
   const [error, setError] = useState('');
   const [startingCamera, setStartingCamera] = useState(false);
@@ -42,6 +44,7 @@ export default function AttendanceCamera({
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressRef = useRef(0);
   const processingRef = useRef(false);
+  const embeddingSamplesRef = useRef<number[][]>([]);
   const enrollmentCapturesRef = useRef<EnrollmentCapture[]>([]);
   const [enrollmentIndex, setEnrollmentIndex] = useState(0);
 
@@ -62,6 +65,7 @@ export default function AttendanceCamera({
       setProcessing(false);
       progressRef.current = 0;
       processingRef.current = false;
+      embeddingSamplesRef.current = [];
       enrollmentCapturesRef.current = [];
       setEnrollmentIndex(0);
     }
@@ -136,17 +140,26 @@ export default function AttendanceCamera({
         const analysis = await analyzeFace(video, expectedPose);
         if (cancelled) return;
         setScanMessage(analysis.message);
+        if (analysis.ready && analysis.embedding) {
+          embeddingSamplesRef.current = [...embeddingSamplesRef.current.slice(-4), analysis.embedding];
+        } else {
+          embeddingSamplesRef.current = [];
+        }
         const nextProgress = analysis.ready
           ? Math.min(100, progressRef.current + 20)
           : Math.max(0, progressRef.current - 28);
         progressRef.current = nextProgress;
         setScanProgress(nextProgress);
 
-        if (nextProgress >= 100 && analysis.embedding) {
+        if (nextProgress >= 100 && embeddingSamplesRef.current.length >= 5) {
           processingRef.current = true;
           setProcessing(true);
           setScanMessage('Rostro capturado. Verificando identidad…');
-          capturePhoto(analysis.embedding);
+          const samples = embeddingSamplesRef.current;
+          const averagedEmbedding = samples[0].map((_, index) =>
+            samples.reduce((sum, sample) => sum + sample[index], 0) / samples.length,
+          );
+          capturePhoto(averagedEmbedding);
           return;
         }
       } catch (scanError: any) {
@@ -184,6 +197,7 @@ export default function AttendanceCamera({
       });
       progressRef.current = 0;
       processingRef.current = false;
+      embeddingSamplesRef.current = [];
       setScanProgress(0);
       setProcessing(false);
       setStep('camera');
@@ -289,11 +303,12 @@ export default function AttendanceCamera({
             <View>
               <View style={styles.cameraFrame}>
                 <VideoElement ref={videoRef} autoPlay muted playsInline style={styles.video as any} />
-                <View pointerEvents="none" style={styles.faceGuide} />
+                <View pointerEvents="none" style={[styles.faceGuide, compactCamera && styles.faceGuideMobile]} />
                 <View
                   pointerEvents="none"
                   style={[
                     styles.progressRing,
+                    compactCamera && styles.progressRingMobile,
                     { background: `conic-gradient(#35E58B ${scanProgress * 3.6}deg, transparent 0deg)` },
                   ]}
                 />
@@ -338,7 +353,9 @@ const styles: Record<string, any> = {
   cameraFrame: { width: '100%', aspectRatio: 4 / 3, overflow: 'hidden', borderRadius: 16, backgroundColor: '#02070C', position: 'relative' },
   video: { width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' },
   faceGuide: { position: 'absolute', width: '48%', height: '72%', left: '26%', top: '10%', borderWidth: 3, borderColor: '#71C5FF', borderRadius: 999, boxShadow: '0 0 0 999px rgba(0,0,0,0.18)' },
+  faceGuideMobile: { width: '64%', height: '78%', left: '18%', top: '7%' },
   progressRing: { position: 'absolute', width: '48%', height: '72%', left: '26%', top: '10%', borderRadius: 999, padding: 5, WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)', WebkitMaskComposite: 'xor', maskComposite: 'exclude', filter: 'drop-shadow(0 0 5px rgba(53,229,139,0.8))' },
+  progressRingMobile: { width: '64%', height: '78%', left: '18%', top: '7%' },
   cameraHint: { position: 'absolute', bottom: 12, alignSelf: 'center', color: '#FFFFFF', backgroundColor: 'rgba(0,0,0,0.72)', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 14, fontSize: 12 },
   successHint: { backgroundColor: 'rgba(8,113,67,0.92)' },
   progressStatus: { alignItems: 'center', marginTop: 14 },

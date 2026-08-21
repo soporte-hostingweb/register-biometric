@@ -102,8 +102,8 @@ export async function analyzeFace(
   const centerX = x + width / 2;
   const centerY = y + height / 2;
   if (width < 0.24 || height < 0.34) return { ready: false, message: 'Acércate un poco a la cámara' };
-  if (width > 0.72 || height > 0.88) return { ready: false, message: 'Aléjate un poco de la cámara' };
-  if (Math.abs(centerX - 0.5) > 0.13 || Math.abs(centerY - 0.48) > 0.15) {
+  if (width > 0.82 || height > 0.94) return { ready: false, message: 'Aléjate un poco de la cámara' };
+  if (Math.abs(centerX - 0.5) > 0.17 || Math.abs(centerY - 0.48) > 0.18) {
     return { ready: false, message: 'Centra tu rostro dentro del óvalo' };
   }
 
