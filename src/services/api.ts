@@ -45,7 +45,10 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
     credentials: 'include',
   });
 
-  if (response.status !== 401 || path.startsWith('/api/auth/')) {
+  // Solo la propia renovación debe evitar otro intento para no crear un bucle.
+  // Otras rutas bajo /api/auth, como /api/auth/profile, sí necesitan renovar
+  // automáticamente cuando el access token haya vencido.
+  if (response.status !== 401 || path === '/api/auth/refresh') {
     return response;
   }
 
