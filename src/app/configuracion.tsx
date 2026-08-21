@@ -68,11 +68,24 @@ export default function ConfiguracionScreen() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'devices' | 'evidence'>('devices');
+  const [evidenceView, setEvidenceView] = useState<'attendance' | 'enrollment'>('attendance');
   const [evidence, setEvidence] = useState<AttendanceEvidence[]>([]);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [selectedEvidence, setSelectedEvidence] = useState<AttendanceEvidence | null>(null);
   const [photoUrl, setPhotoUrl] = useState('');
   const [photoLoading, setPhotoLoading] = useState(false);
+
+  const groupedEvidence = useMemo(() => {
+    const visible = evidence.filter(item => evidenceView === 'enrollment' ? item.kind === 'enrollment' : item.kind !== 'enrollment');
+    const groups = new Map<string, { employeeId: number; employeeName: string; email?: string | null; items: AttendanceEvidence[] }>();
+    visible.forEach(item => {
+      const key = String(item.employeeId || item.email || item.employeeName);
+      const group = groups.get(key) || { employeeId: item.employeeId, employeeName: item.employeeName || 'Empleado', email: item.email, items: [] };
+      group.items.push(item);
+      groups.set(key, group);
+    });
+    return Array.from(groups.values()).sort((a, b) => a.employeeName.localeCompare(b.employeeName, 'es'));
+  }, [evidence, evidenceView]);
 
   const loadDevices = async () => {
     setLoading(true);
@@ -334,6 +347,20 @@ export default function ConfiguracionScreen() {
 
         {activeTab === 'evidence' && (
           <>
+            <View style={styles.evidenceFilters}>
+              {(['attendance', 'enrollment'] as const).map(view => (
+                <TouchableOpacity
+                  key={view}
+                  style={[styles.evidenceFilter, evidenceView === view && styles.evidenceFilterActive]}
+                  onPress={() => setEvidenceView(view)}
+                >
+                  <Ionicons name={view === 'attendance' ? 'time-outline' : 'scan-outline'} size={18} color={evidenceView === view ? '#071C35' : '#9AB1C7'} />
+                  <Text style={[styles.evidenceFilterText, evidenceView === view && styles.evidenceFilterTextActive]}>
+                    {view === 'attendance' ? 'Marcaciones' : 'Registro biométrico'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <View style={[styles.toolbar, isMobile && styles.toolbarMobile]}>
               <View style={styles.searchBox}>
                 <Ionicons name="search-outline" size={19} color="#7F9BB8" />
@@ -359,39 +386,43 @@ export default function ConfiguracionScreen() {
                 <ActivityIndicator color="#65B9FF" size="large" />
                 <Text style={styles.loadingText}>Cargando evidencias…</Text>
               </View>
-            ) : evidence.length === 0 ? (
+            ) : groupedEvidence.length === 0 ? (
               <View style={styles.emptyBox}>
                 <Ionicons name="images-outline" size={42} color="#58748F" />
-                <Text style={styles.emptyTitle}>No hay evidencias faciales</Text>
+                <Text style={styles.emptyTitle}>{evidenceView === 'attendance' ? 'No hay fotografías de marcaciones' : 'No hay registros biométricos'}</Text>
               </View>
             ) : (
               <View style={styles.evidenceList}>
-                {evidence.map(item => (
-                  <View style={[styles.evidenceCard, isMobile && styles.evidenceCardMobile]} key={`${item.kind || 'attendance'}-${item.evidenceId}`}>
-                    <View style={styles.evidenceIcon}>
-                      <Ionicons name="scan-outline" size={25} color="#76C4FF" />
-                    </View>
-                    <View style={styles.evidenceInfo}>
-                      <Text style={styles.userName}>{item.employeeName || 'Empleado'}</Text>
-                      <Text style={styles.userEmail}>{item.email || `Empleado #${item.employeeId}`}</Text>
-                      <View style={styles.evidenceMeta}>
-                        <Text style={styles.detailText}>
-                          {item.kind === 'enrollment'
-                            ? `Registro: ${item.captureAngle === 'front' ? 'Frente' : item.captureAngle === 'left' ? 'Lado izquierdo' : 'Lado derecho'}`
-                            : item.checkType === 0 ? 'Entrada' : 'Salida'}
-                        </Text>
-                        <Text style={styles.detailText}>•</Text>
-                        <Text style={styles.detailText}>{formatDate(item.markedAt || item.capturedAt)}</Text>
-                        {item.kind !== 'enrollment' && <Text style={styles.detailText}>• IP: {item.captureIp || 'No disponible'}</Text>}
+                {groupedEvidence.map(group => (
+                  <View style={styles.evidenceGroup} key={String(group.employeeId || group.email)}>
+                    <View style={styles.evidenceGroupHeader}>
+                      <View style={styles.evidenceIcon}><Ionicons name="person-outline" size={24} color="#76C4FF" /></View>
+                      <View style={styles.evidenceInfo}>
+                        <Text style={styles.userName}>{group.employeeName}</Text>
+                        <Text style={styles.userEmail}>{group.email || `Empleado #${group.employeeId}`}</Text>
                       </View>
-                      <Text style={styles.locationText}>
-                        {item.kind === 'enrollment' ? 'Plantilla de registro facial' : item.locationSource || 'Ubicación no disponible'}
-                      </Text>
+                      <Text style={styles.evidenceCount}>{group.items.length} {group.items.length === 1 ? 'registro' : 'registros'}</Text>
                     </View>
-                    <TouchableOpacity style={[styles.photoButton, isMobile && styles.photoButtonMobile]} onPress={() => openPhoto(item)}>
-                      <Ionicons name="eye-outline" size={19} color="#071C35" />
-                      <Text style={styles.photoButtonText}>Ver fotografía</Text>
-                    </TouchableOpacity>
+                    <View style={styles.evidenceGroupItems}>{group.items.map(item => (
+                      <View style={[styles.evidenceCard, isMobile && styles.evidenceCardMobile]} key={`${item.kind || 'attendance'}-${item.evidenceId}`}>
+                        <View style={styles.evidenceIcon}><Ionicons name={item.kind === 'enrollment' ? 'scan-outline' : 'camera-outline'} size={25} color="#76C4FF" /></View>
+                        <View style={styles.evidenceInfo}>
+                          <View style={styles.evidenceMeta}>
+                            <Text style={styles.evidenceType}>{item.kind === 'enrollment'
+                              ? `Registro: ${item.captureAngle === 'front' ? 'Frente' : item.captureAngle === 'left' ? 'Lado izquierdo' : 'Lado derecho'}`
+                              : item.checkType === 0 ? 'Entrada' : 'Salida'}</Text>
+                            <Text style={styles.detailText}>•</Text>
+                            <Text style={styles.detailText}>{formatDate(item.markedAt || item.capturedAt)}</Text>
+                            {item.kind !== 'enrollment' && <Text style={styles.detailText}>• IP: {item.captureIp || 'No disponible'}</Text>}
+                          </View>
+                          <Text style={styles.locationText}>{item.kind === 'enrollment' ? 'Plantilla de registro facial' : item.locationSource || 'Ubicación no disponible'}</Text>
+                        </View>
+                        <TouchableOpacity style={[styles.photoButton, isMobile && styles.photoButtonMobile]} onPress={() => openPhoto(item)}>
+                          <Ionicons name="eye-outline" size={19} color="#071C35" />
+                          <Text style={styles.photoButtonText}>Ver fotografía</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}</View>
                   </View>
                 ))}
               </View>
@@ -485,12 +516,22 @@ const styles: Record<string, any> = {
   revokeButton: { marginTop: 14, minHeight: 44, borderRadius: 11, backgroundColor: '#57232A', borderWidth: 1, borderColor: '#80404A', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   disabledButton: { opacity: 0.42 },
   revokeText: { color: '#FFD6D6', fontSize: 12.5, fontWeight: '800' },
+  evidenceFilters: { width: '100%', flexDirection: 'row', gap: 8, padding: 5, marginBottom: 14, borderRadius: 13, borderWidth: 1, borderColor: '#213D56', backgroundColor: '#091725' },
+  evidenceFilter: { flex: 1, minHeight: 44, paddingHorizontal: 8, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  evidenceFilterActive: { backgroundColor: '#77C3FF' },
+  evidenceFilterText: { color: '#9AB1C7', fontSize: 12, fontWeight: '800', textAlign: 'center' },
+  evidenceFilterTextActive: { color: '#071C35' },
   evidenceList: { gap: 11 },
+  evidenceGroup: { width: '100%', padding: 12, borderRadius: 16, borderWidth: 1, borderColor: '#294760', backgroundColor: '#091725' },
+  evidenceGroupHeader: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 11, marginBottom: 11, borderBottomWidth: 1, borderBottomColor: '#1A344A' },
+  evidenceGroupItems: { gap: 9 },
+  evidenceCount: { color: '#76C4FF', fontSize: 10.5, fontWeight: '800' },
   evidenceCard: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 13, padding: 15, borderRadius: 14, borderWidth: 1, borderColor: '#213D56', backgroundColor: '#0D1D2E' },
   evidenceCardMobile: { flexDirection: 'column', alignItems: 'stretch', padding: 13 },
   evidenceIcon: { width: 46, height: 46, borderRadius: 13, backgroundColor: '#17304A', alignItems: 'center', justifyContent: 'center' },
   evidenceInfo: { flex: 1, minWidth: 0 },
   evidenceMeta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 5 },
+  evidenceType: { color: '#DCEBFA', fontSize: 12, fontWeight: '800' },
   locationText: { color: '#5FAEEA', fontSize: 11, marginTop: 5 },
   photoButton: { minHeight: 41, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#77C3FF', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   photoButtonMobile: { width: '100%', marginTop: 4 },
