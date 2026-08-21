@@ -23,6 +23,28 @@ const enrollmentLabels = { front: 'Mira de frente', left: 'Gira hacia tu izquier
 const VideoElement = 'video' as any;
 const CanvasElement = 'canvas' as any;
 
+function selectRepresentativeEmbedding(samples: number[][]) {
+  if (samples.length === 0) return [];
+  if (samples.length === 1) return samples[0];
+
+  let selected = samples[0];
+  let lowestTotalDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of samples) {
+    let totalDistance = 0;
+    for (const other of samples) {
+      for (let index = 0; index < candidate.length; index += 1) {
+        const difference = candidate[index] - other[index];
+        totalDistance += difference * difference;
+      }
+    }
+    if (totalDistance < lowestTotalDistance) {
+      lowestTotalDistance = totalDistance;
+      selected = candidate;
+    }
+  }
+  return selected;
+}
+
 export default function AttendanceCamera({
   visible,
   attendanceType,
@@ -156,14 +178,7 @@ export default function AttendanceCamera({
           setProcessing(true);
           setScanMessage('Rostro capturado. Verificando identidad…');
           const samples = embeddingSamplesRef.current;
-          const averagedEmbedding = samples[0].map((_, index) =>
-            samples.reduce((sum, sample) => sum + sample[index], 0) / samples.length,
-          );
-          const magnitude = Math.sqrt(averagedEmbedding.reduce((sum, value) => sum + value * value, 0));
-          const normalizedEmbedding = magnitude > 0
-            ? averagedEmbedding.map((value) => value / magnitude)
-            : averagedEmbedding;
-          capturePhoto(normalizedEmbedding);
+          capturePhoto(selectRepresentativeEmbedding(samples));
           return;
         }
       } catch (scanError: any) {
