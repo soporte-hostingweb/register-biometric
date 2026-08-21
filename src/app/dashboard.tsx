@@ -128,9 +128,25 @@ export default function Dashboard() {
   const [historyLogs, setHistoryLogs] = useState<any[]>([]);
   const [showFullHistory, setShowFullHistory] = useState(false);
   const [cameraVisible, setCameraVisible] = useState(false);
+  const [cameraPurpose, setCameraPurpose] = useState<'attendance' | 'enrollment'>('attendance');
+  const [faceEnrolled, setFaceEnrolled] = useState<boolean | null>(null);
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width > 768;
   const { fullName, rol, email } = useLocalSearchParams<{ fullName: string; rol: string; email: string }>();
+
+  useEffect(() => {
+    const fetchFaceStatus = async () => {
+      if (!email) return;
+      try {
+        const response = await apiFetch('/api/attendance/face-status');
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) setFaceEnrolled(Boolean(data.enrolled));
+      } catch (err) {
+        console.log('No se pudo consultar el registro facial:', err);
+      }
+    };
+    fetchFaceStatus();
+  }, [email]);
 
   useEffect(() => {
     if (!email) {
@@ -305,8 +321,36 @@ export default function Dashboard() {
       return;
     }
 
+    setCameraPurpose('attendance');
     setMessage('');
     setCameraVisible(true);
+  };
+
+  const openEnrollmentFlow = () => {
+    setCameraPurpose('enrollment');
+    setMessage('');
+    setCameraVisible(true);
+  };
+
+  const handleEnrollFace = async (_photoDataUrl: string, faceDescriptor: number[]) => {
+    setCameraVisible(false);
+    setLoading(true);
+    setMessage('Registrando tu rostro…');
+    try {
+      const response = await apiFetch('/api/attendance/face-enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ faceDescriptor, faceModel: 'human-faceres-v1' }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || 'No se pudo registrar el rostro');
+      setFaceEnrolled(true);
+      setMessage(data.message || 'Rostro registrado correctamente');
+    } catch (error: any) {
+      setMessage(error.message || 'No se pudo registrar el rostro');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleMarcar = async (photoDataUrl: string, faceDescriptor: number[]) => {
@@ -381,6 +425,7 @@ export default function Dashboard() {
         }
         const registerData = await res.json().catch(() => ({}));
         registrationMessage = registerData.message || '';
+        if (registerData.faceEnrolled || registerData.faceVerified) setFaceEnrolled(true);
       } catch (apiErr: any) {
         clearTimeout(timeoutId);
         console.log('Aviso: Error en el registro del servidor:', apiErr);
@@ -814,6 +859,17 @@ export default function Dashboard() {
                 <Text style={styles.date}>{fecha}</Text>
                 <Text style={styles.clock}>{hora}</Text>
 
+                {faceEnrolled === false && (
+                  <TouchableOpacity
+                    style={[styles.markButton, { backgroundColor: '#173A5E', marginBottom: 10 }, loading && styles.markButtonDisabled]}
+                    onPress={openEnrollmentFlow}
+                    disabled={loading}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.markButtonText}>Registrar mi rostro</Text>
+                  </TouchableOpacity>
+                )}
+
                 <TouchableOpacity
                   style={[styles.markButton, (loading || completadoHoy) && styles.markButtonDisabled]}
                   onPress={openCameraFlow}
@@ -1045,6 +1101,17 @@ export default function Dashboard() {
               <Text style={styles.date}>{fecha}</Text>
               <Text style={styles.clock}>{hora}</Text>
 
+              {faceEnrolled === false && (
+                <TouchableOpacity
+                  style={[styles.markButton, { backgroundColor: '#173A5E', marginBottom: 10 }, loading && styles.markButtonDisabled]}
+                  onPress={openEnrollmentFlow}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.markButtonText}>Registrar mi rostro</Text>
+                </TouchableOpacity>
+              )}
+
               <TouchableOpacity
                 style={[styles.markButton, (loading || completadoHoy) && styles.markButtonDisabled]}
                 onPress={openCameraFlow}
@@ -1226,8 +1293,9 @@ export default function Dashboard() {
       <AttendanceCamera
         visible={cameraVisible}
         attendanceType={siguienteTipo}
+        mode={cameraPurpose}
         onCancel={() => setCameraVisible(false)}
-        onConfirm={handleMarcar}
+        onConfirm={cameraPurpose === 'enrollment' ? handleEnrollFace : handleMarcar}
       />
     </SafeAreaView>
   );

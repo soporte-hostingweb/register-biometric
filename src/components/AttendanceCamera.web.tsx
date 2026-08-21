@@ -6,6 +6,7 @@ import { analyzeFace, loadFaceEngine } from '../services/face-biometric.web';
 type AttendanceCameraProps = {
   visible: boolean;
   attendanceType: 'Entrada' | 'Salida';
+  mode?: 'attendance' | 'enrollment';
   onCancel: () => void;
   onConfirm: (photoDataUrl: string, faceDescriptor: number[]) => void;
 };
@@ -16,6 +17,7 @@ const CanvasElement = 'canvas' as any;
 export default function AttendanceCamera({
   visible,
   attendanceType,
+  mode = 'attendance',
   onCancel,
   onConfirm,
 }: AttendanceCameraProps) {
@@ -175,8 +177,8 @@ export default function AttendanceCamera({
         <View style={styles.modalCard}>
           <View style={styles.header}>
             <View>
-              <Text style={styles.eyebrow}>VERIFICACIÓN BIOMÉTRICA</Text>
-              <Text style={styles.title}>Marcar {attendanceType}</Text>
+              <Text style={styles.eyebrow}>{mode === 'enrollment' ? 'REGISTRO BIOMÉTRICO' : 'VERIFICACIÓN BIOMÉTRICA'}</Text>
+              <Text style={styles.title}>{mode === 'enrollment' ? 'Registrar mi rostro' : `Marcar ${attendanceType}`}</Text>
             </View>
             <Pressable onPress={closeModal} style={styles.closeButton} disabled={processing}>
               <Ionicons name="close" size={24} color="#DDEBFF" />
@@ -189,7 +191,9 @@ export default function AttendanceCamera({
                 <Ionicons name="scan-circle-outline" size={64} color="#65B9FF" />
                 <Text style={styles.tipsTitle}>Prepara tu rostro</Text>
                 <Text style={styles.tipsDescription}>
-                  La captura será automática cuando la imagen sea nítida y se valide un rostro real.
+                  {mode === 'enrollment'
+                    ? 'Tu rostro quedará asociado exclusivamente a esta cuenta para validar futuras marcaciones.'
+                    : 'La captura será automática cuando la imagen sea nítida y se valide un rostro real.'}
                 </Text>
               </View>
               {[
@@ -211,7 +215,11 @@ export default function AttendanceCamera({
               >
                 <Ionicons name="camera-outline" size={21} color="#071C35" />
                 <Text style={styles.primaryButtonText}>
-                  {startingCamera ? 'Abriendo cámara…' : 'Iniciar verificación facial'}
+                  {startingCamera
+                    ? 'Abriendo cámara…'
+                    : mode === 'enrollment'
+                      ? 'Registrar mi rostro'
+                      : 'Iniciar verificación facial'}
                 </Text>
               </TouchableOpacity>
             </View>
