@@ -43,6 +43,8 @@ type AttendanceEvidence = {
   capturedAt: string;
   captureIp?: string | null;
   captureUserAgent?: string | null;
+  kind?: 'attendance' | 'enrollment';
+  captureAngle?: 'front' | 'left' | 'right';
 };
 
 const formatDate = (value?: string | null) => {
@@ -89,10 +91,27 @@ export default function ConfiguracionScreen() {
     setError('');
     try {
       const query = search.trim() ? `?q=${encodeURIComponent(search.trim())}` : '';
-      const response = await apiFetch(`/api/admin/attendance-evidence${query}`);
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || 'No se pudieron cargar las evidencias.');
-      setEvidence(data.evidence || []);
+      const [evidenceResponse, enrollmentResponse] = await Promise.all([
+        apiFetch(`/api/admin/attendance-evidence${query}`),
+        apiFetch(`/api/admin/face-enrollments${query}`),
+      ]);
+      const data = await evidenceResponse.json().catch(() => ({}));
+      const enrollmentData = await enrollmentResponse.json().catch(() => ({}));
+      if (!evidenceResponse.ok) throw new Error(data.message || 'No se pudieron cargar las evidencias.');
+      if (!enrollmentResponse.ok) throw new Error(enrollmentData.message || 'No se pudieron cargar los rostros registrados.');
+      const enrollmentItems: AttendanceEvidence[] = (enrollmentData.samples || []).map((sample: any) => ({
+        evidenceId: sample.sampleId,
+        attendanceLogId: 0,
+        employeeId: sample.employeeId,
+        employeeName: sample.employeeName,
+        email: sample.email,
+        checkType: -1,
+        capturedAt: sample.capturedAt,
+        photoBytes: sample.photoBytes,
+        kind: 'enrollment',
+        captureAngle: sample.captureAngle,
+      }));
+      setEvidence([...(data.evidence || []).map((item: AttendanceEvidence) => ({ ...item, kind: 'attendance' as const })), ...enrollmentItems]);
     } catch (loadError: any) {
       setError(loadError.message || 'No se pudieron cargar las evidencias.');
     } finally {
@@ -111,7 +130,10 @@ export default function ConfiguracionScreen() {
     setPhotoLoading(true);
     setError('');
     try {
-      const response = await apiFetch(`/api/admin/attendance-evidence/${item.evidenceId}/photo`);
+      const photoPath = item.kind === 'enrollment'
+        ? `/api/admin/face-enrollments/${item.evidenceId}/photo`
+        : `/api/admin/attendance-evidence/${item.evidenceId}/photo`;
+      const response = await apiFetch(photoPath);
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.message || 'No se pudo abrir la fotografía.');
@@ -342,7 +364,7 @@ export default function ConfiguracionScreen() {
             ) : (
               <View style={styles.evidenceList}>
                 {evidence.map(item => (
-                  <View style={styles.evidenceCard} key={item.evidenceId}>
+                  <View style={styles.evidenceCard} key={`${item.kind || 'attendance'}-${item.evidenceId}`}>
                     <View style={styles.evidenceIcon}>
                       <Ionicons name="scan-outline" size={25} color="#76C4FF" />
                     </View>
@@ -350,12 +372,18 @@ export default function ConfiguracionScreen() {
                       <Text style={styles.userName}>{item.employeeName || 'Empleado'}</Text>
                       <Text style={styles.userEmail}>{item.email || `Empleado #${item.employeeId}`}</Text>
                       <View style={styles.evidenceMeta}>
-                        <Text style={styles.detailText}>{item.checkType === 0 ? 'Entrada' : 'Salida'}</Text>
+                        <Text style={styles.detailText}>
+                          {item.kind === 'enrollment'
+                            ? `Registro: ${item.captureAngle === 'front' ? 'Frente' : item.captureAngle === 'left' ? 'Lado izquierdo' : 'Lado derecho'}`
+                            : item.checkType === 0 ? 'Entrada' : 'Salida'}
+                        </Text>
                         <Text style={styles.detailText}>•</Text>
                         <Text style={styles.detailText}>{formatDate(item.markedAt || item.capturedAt)}</Text>
-                        <Text style={styles.detailText}>• IP: {item.captureIp || 'No disponible'}</Text>
+                        {item.kind !== 'enrollment' && <Text style={styles.detailText}>• IP: {item.captureIp || 'No disponible'}</Text>}
                       </View>
-                      <Text style={styles.locationText}>{item.locationSource || 'Ubicación no disponible'}</Text>
+                      <Text style={styles.locationText}>
+                        {item.kind === 'enrollment' ? 'Plantilla de registro facial' : item.locationSource || 'Ubicación no disponible'}
+                      </Text>
                     </View>
                     <TouchableOpacity style={styles.photoButton} onPress={() => openPhoto(item)}>
                       <Ionicons name="eye-outline" size={19} color="#071C35" />
@@ -374,7 +402,7 @@ export default function ConfiguracionScreen() {
           <Pressable style={styles.photoModal} onPress={() => {}}>
             <View style={styles.photoHeader}>
               <View>
-                <Text style={styles.eyebrow}>EVIDENCIA FACIAL</Text>
+                <Text style={styles.eyebrow}>{selectedEvidence?.kind === 'enrollment' ? 'ROSTRO REGISTRADO' : 'EVIDENCIA FACIAL'}</Text>
                 <Text style={styles.photoTitle}>{selectedEvidence?.employeeName}</Text>
                 <Text style={styles.userEmail}>{formatDate(selectedEvidence?.markedAt || selectedEvidence?.capturedAt)}</Text>
               </View>

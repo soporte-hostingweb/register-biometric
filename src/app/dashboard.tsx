@@ -9,6 +9,7 @@ import { Modal, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, u
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch, logoutFromApi } from '../services/api';
 import AttendanceCamera from '../components/AttendanceCamera';
+import type { EnrollmentCapture } from '../components/AttendanceCamera.web';
 import { styles } from '../styles/dashboard';
 
 Notifications.setNotificationHandler({
@@ -321,6 +322,10 @@ export default function Dashboard() {
       return;
     }
 
+    if (faceEnrolled === false) {
+      openEnrollmentFlow();
+      return;
+    }
     setCameraPurpose('attendance');
     setMessage('');
     setCameraVisible(true);
@@ -332,15 +337,16 @@ export default function Dashboard() {
     setCameraVisible(true);
   };
 
-  const handleEnrollFace = async (_photoDataUrl: string, faceDescriptor: number[]) => {
+  const handleEnrollFace = async (_photoDataUrl: string, _faceDescriptor: number[], captures?: EnrollmentCapture[]) => {
     setCameraVisible(false);
     setLoading(true);
     setMessage('Registrando tu rostro…');
     try {
-      const response = await apiFetch('/api/attendance/face-enroll', {
+      if (!captures || captures.length !== 3) throw new Error('Debes completar las tres capturas del rostro');
+      const response = await apiFetch('/api/attendance/face-enroll-3', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ faceDescriptor, faceModel: 'human-faceres-v1' }),
+        body: JSON.stringify({ captures, faceModel: 'human-faceres-v1' }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || 'No se pudo registrar el rostro');

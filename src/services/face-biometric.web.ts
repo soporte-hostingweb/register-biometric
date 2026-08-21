@@ -88,7 +88,10 @@ function imageSharpness(video: HTMLVideoElement, faceBox: [number, number, numbe
   return brightness / gray.length < 45 ? 0 : variance;
 }
 
-export async function analyzeFace(video: HTMLVideoElement): Promise<FaceAnalysis> {
+export async function analyzeFace(
+  video: HTMLVideoElement,
+  expectedPose: 'front' | 'left' | 'right' = 'front',
+): Promise<FaceAnalysis> {
   const human = await loadFaceEngine();
   const result = await human.detect(video);
   if (result.face.length === 0) return { ready: false, message: 'Coloca tu rostro dentro del óvalo' };
@@ -105,8 +108,19 @@ export async function analyzeFace(video: HTMLVideoElement): Promise<FaceAnalysis
   }
 
   const angle = face.rotation?.angle;
-  if (angle && (Math.abs(angle.yaw) > 0.24 || Math.abs(angle.pitch) > 0.22 || Math.abs(angle.roll) > 0.18)) {
-    return { ready: false, message: 'Mira de frente a la cámara' };
+  if (angle) {
+    if (Math.abs(angle.pitch) > 0.22 || Math.abs(angle.roll) > 0.18) {
+      return { ready: false, message: 'Mantén la cabeza recta' };
+    }
+    if (expectedPose === 'front' && Math.abs(angle.yaw) > 0.2) {
+      return { ready: false, message: 'Mira de frente a la cámara' };
+    }
+    if (expectedPose === 'left' && angle.yaw > -0.2) {
+      return { ready: false, message: 'Gira lentamente el rostro hacia tu izquierda' };
+    }
+    if (expectedPose === 'right' && angle.yaw < 0.2) {
+      return { ready: false, message: 'Gira lentamente el rostro hacia tu derecha' };
+    }
   }
 
   const sharpness = imageSharpness(video, face.box);

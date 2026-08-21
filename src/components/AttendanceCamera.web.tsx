@@ -8,8 +8,17 @@ type AttendanceCameraProps = {
   attendanceType: 'Entrada' | 'Salida';
   mode?: 'attendance' | 'enrollment';
   onCancel: () => void;
-  onConfirm: (photoDataUrl: string, faceDescriptor: number[]) => void;
+  onConfirm: (photoDataUrl: string, faceDescriptor: number[], captures?: EnrollmentCapture[]) => void;
 };
+
+export type EnrollmentCapture = {
+  angle: 'front' | 'left' | 'right';
+  photoData: string;
+  faceDescriptor: number[];
+};
+
+const enrollmentAngles: EnrollmentCapture['angle'][] = ['front', 'left', 'right'];
+const enrollmentLabels = { front: 'Mira de frente', left: 'Gira hacia tu izquierda', right: 'Gira hacia tu derecha' };
 
 const VideoElement = 'video' as any;
 const CanvasElement = 'canvas' as any;
@@ -33,6 +42,8 @@ export default function AttendanceCamera({
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressRef = useRef(0);
   const processingRef = useRef(false);
+  const enrollmentCapturesRef = useRef<EnrollmentCapture[]>([]);
+  const [enrollmentIndex, setEnrollmentIndex] = useState(0);
 
   const stopCamera = () => {
     if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
@@ -51,6 +62,8 @@ export default function AttendanceCamera({
       setProcessing(false);
       progressRef.current = 0;
       processingRef.current = false;
+      enrollmentCapturesRef.current = [];
+      setEnrollmentIndex(0);
     }
     return stopCamera;
   }, [visible]);
@@ -85,6 +98,22 @@ export default function AttendanceCamera({
 
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const capturedPhoto = canvas.toDataURL('image/jpeg', 0.72);
+    if (mode === 'enrollment') {
+      const angle = enrollmentAngles[enrollmentIndex];
+      const captures = [...enrollmentCapturesRef.current, { angle, photoData: capturedPhoto, faceDescriptor }];
+      enrollmentCapturesRef.current = captures;
+      if (captures.length < 3) {
+        progressRef.current = 0;
+        processingRef.current = false;
+        setScanProgress(0);
+        setProcessing(false);
+        setEnrollmentIndex(captures.length);
+        return;
+      }
+      stopCamera();
+      onConfirm(captures[0].photoData, captures[0].faceDescriptor, captures);
+      return;
+    }
     stopCamera();
     onConfirm(capturedPhoto, faceDescriptor);
   };
@@ -101,7 +130,8 @@ export default function AttendanceCamera({
       }
 
       try {
-        const analysis = await analyzeFace(video);
+        const expectedPose = mode === 'enrollment' ? enrollmentAngles[enrollmentIndex] : 'front';
+        const analysis = await analyzeFace(video, expectedPose);
         if (cancelled) return;
         setScanMessage(analysis.message);
         const nextProgress = analysis.ready
@@ -136,7 +166,7 @@ export default function AttendanceCamera({
       cancelled = true;
       if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
     };
-  }, [step]);
+  }, [step, mode, enrollmentIndex]);
 
   const startCamera = async () => {
     setStartingCamera(true);
@@ -239,6 +269,11 @@ export default function AttendanceCamera({
                   {scanMessage}
                 </Text>
               </View>
+              {mode === 'enrollment' && (
+                <Text style={styles.poseInstruction}>
+                  Paso {enrollmentIndex + 1} de 3: {enrollmentLabels[enrollmentAngles[enrollmentIndex]]}
+                </Text>
+              )}
               <CanvasElement ref={canvasRef} style={{ display: 'none' }} />
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
               <View style={styles.progressStatus}>
@@ -276,4 +311,5 @@ const styles: Record<string, any> = {
   successHint: { backgroundColor: 'rgba(8,113,67,0.92)' },
   progressStatus: { alignItems: 'center', marginTop: 14 },
   progressStatusText: { color: '#79E7B0', fontSize: 15, fontWeight: '800' },
+  poseInstruction: { color: '#7EC3FF', fontSize: 14, fontWeight: '800', textAlign: 'center', marginTop: 12 },
 };
