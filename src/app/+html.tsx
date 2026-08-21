@@ -6,7 +6,7 @@ export default function Root({ children }: PropsWithChildren) {
     <html lang="es">
       <head>
         <meta charSet="utf-8" />
-        <title>HWPerú - Asistencia</title>
+        <title>HWPerú Asistencia</title>
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
         <meta name="theme-color" content="#051C33" />
@@ -15,7 +15,8 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="apple-mobile-web-app-title" content="HWPerú - Asistencia" />
         <meta name="description" content="Plataforma digital de asistencia HWPerú" />
         <link rel="manifest" href="/manifest.webmanifest" />
-        <link rel="icon" href="/favicon.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icons/pwa-icon-192.png?v=2" />
+        <link rel="shortcut icon" type="image/png" href="/icons/pwa-icon-192.png?v=2" />
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
         <script
           dangerouslySetInnerHTML={{
