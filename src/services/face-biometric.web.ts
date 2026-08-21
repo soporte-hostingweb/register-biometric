@@ -26,7 +26,7 @@ async function createHuman() {
         return: false,
       },
       mesh: { enabled: true, modelPath: 'facemesh.json' },
-      iris: { enabled: true, modelPath: 'iris.json' },
+      iris: { enabled: false },
       description: { enabled: true, modelPath: 'faceres.json', minConfidence: 0.65 },
       antispoof: { enabled: true, modelPath: 'antispoof.json' },
       liveness: { enabled: true, modelPath: 'liveness.json' },

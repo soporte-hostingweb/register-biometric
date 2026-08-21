@@ -26,6 +26,12 @@ type PwaWindow = Window & {
   __pwaInstallPrompt?: PwaInstallPromptEvent | null;
 };
 
+function isIosBrowser() {
+  if (typeof navigator === 'undefined') return false;
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -42,6 +48,11 @@ export default function LoginScreen() {
       Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
 
     if (isStandalone) return;
+
+    if (isIosBrowser()) {
+      setShowInstallButton(true);
+      return;
+    }
 
     const updateInstallAvailability = () => {
       const pwaWindow = window as PwaWindow;
@@ -64,6 +75,13 @@ export default function LoginScreen() {
 
     const pwaWindow = window as PwaWindow;
     const installPrompt = pwaWindow.__pwaInstallPrompt;
+
+    if (isIosBrowser()) {
+      window.alert(
+        'Para instalar HWPerú en iPhone: abre esta página en Safari, pulsa Compartir y selecciona “Añadir a pantalla de inicio”. Luego abre HWPerú desde el nuevo icono.',
+      );
+      return;
+    }
 
     if (!installPrompt) {
       window.alert(
@@ -153,7 +171,7 @@ export default function LoginScreen() {
           'Unable to connect to the server. Check your office Wi-Fi or data signal.',
         );
       } else {
-        showAlert('Error', 'Could not connect to the server. Verify internet connection.');
+        showAlert('Error', error.message || 'Could not connect to the server. Verify internet connection.');
       }
     } finally {
       setLoading(false);
