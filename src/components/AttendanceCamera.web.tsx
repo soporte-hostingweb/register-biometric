@@ -5,8 +5,8 @@ import { analyzeFace, loadFaceEngine } from '../services/face-biometric.web';
 
 type AttendanceCameraProps = {
   visible: boolean;
-  attendanceType: 'Entrada' | 'Salida';
-  mode?: 'attendance' | 'enrollment';
+  attendanceType?: 'Entrada' | 'Salida';
+  mode?: 'attendance' | 'enrollment' | 'password-change';
   onCancel: () => void;
   onConfirm: (photoDataUrl: string, faceDescriptor: number[], captures?: EnrollmentCapture[]) => void;
 };
@@ -47,11 +47,12 @@ function selectRepresentativeEmbedding(samples: number[][]) {
 
 export default function AttendanceCamera({
   visible,
-  attendanceType,
+  attendanceType = 'Entrada',
   mode = 'attendance',
   onCancel,
   onConfirm,
 }: AttendanceCameraProps) {
+  const isPasswordChange = mode === 'password-change';
   const { width: viewportWidth } = useWindowDimensions();
   const compactCamera = viewportWidth <= 600;
   const [step, setStep] = useState<'tips' | 'pose' | 'camera'>('tips');
@@ -243,7 +244,13 @@ export default function AttendanceCamera({
           <View style={styles.header}>
             <View>
               <Text style={styles.eyebrow}>{mode === 'enrollment' ? 'REGISTRO BIOMÉTRICO' : 'VERIFICACIÓN BIOMÉTRICA'}</Text>
-              <Text style={styles.title}>{mode === 'enrollment' ? 'Registrar mi rostro' : `Marcar ${attendanceType}`}</Text>
+              <Text style={styles.title}>
+                {mode === 'enrollment'
+                  ? 'Registrar mi rostro'
+                  : isPasswordChange
+                    ? 'Confirmar cambio de contraseña'
+                    : `Marcar ${attendanceType}`}
+              </Text>
             </View>
             <Pressable onPress={closeModal} style={styles.closeButton} disabled={processing}>
               <Ionicons name="close" size={24} color="#DDEBFF" />
@@ -258,7 +265,9 @@ export default function AttendanceCamera({
                 <Text style={styles.tipsDescription}>
                   {mode === 'enrollment'
                     ? 'Tu rostro quedará asociado exclusivamente a esta cuenta para validar futuras marcaciones.'
-                    : 'La captura será automática cuando la imagen sea nítida y se valide un rostro real.'}
+                    : isPasswordChange
+                      ? 'Compararemos esta captura con el rostro registrado antes de autorizar la nueva contraseña.'
+                      : 'La captura será automática cuando la imagen sea nítida y se valide un rostro real.'}
                 </Text>
               </View>
               {[

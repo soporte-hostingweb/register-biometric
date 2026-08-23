@@ -3,8 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import { apiFetch } from '../services/api';
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import AttendanceCamera from '../components/AttendanceCamera';
+import { apiFetch, clearAccessToken } from '../services/api';
 
 type Empleado = {
   nombre: string;
@@ -25,6 +26,14 @@ export default function PerfilScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [faceEnrolled, setFaceEnrolled] = useState<boolean | null>(null);
+  const [faceStatusError, setFaceStatusError] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordCameraVisible, setPasswordCameraVisible] = useState(false);
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
   
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width > 768;
@@ -77,6 +86,25 @@ export default function PerfilScreen() {
     }
   }, [email]);
 
+  useEffect(() => {
+    const fetchFaceStatus = async () => {
+      setFaceStatusError('');
+      try {
+        const response = await apiFetch('/api/attendance/face-status');
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.message || 'No se pudo comprobar el registro facial.');
+        }
+        setFaceEnrolled(Boolean(data?.enrolled));
+      } catch (faceError: any) {
+        setFaceEnrolled(false);
+        setFaceStatusError(faceError?.message || 'No se pudo comprobar el registro facial.');
+      }
+    };
+
+    if (email) fetchFaceStatus();
+  }, [email]);
+
   const handlePickImage = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -104,6 +132,55 @@ export default function PerfilScreen() {
     }
   };
 
+  const beginPasswordChange = () => {
+    setPasswordError('');
+    if (!faceEnrolled) {
+      setPasswordError('Necesitas tener un rostro registrado para cambiar la contraseña.');
+      return;
+    }
+    if (newPassword.length < 8 || newPassword.length > 128) {
+      setPasswordError('La nueva contraseña debe tener entre 8 y 128 caracteres.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Las contraseñas no coinciden.');
+      return;
+    }
+    setPasswordCameraVisible(true);
+  };
+
+  const handlePasswordChangeWithFace = async (photoData: string, faceDescriptor: number[]) => {
+    setPasswordCameraVisible(false);
+    setPasswordSubmitting(true);
+    setPasswordError('');
+    try {
+      const response = await apiFetch('/api/auth/change-password-with-face', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          newPassword,
+          photoData,
+          faceDescriptor,
+          faceModel: 'human-faceres-v1',
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.message || 'No se pudo cambiar la contraseña.');
+      }
+
+      setNewPassword('');
+      setConfirmPassword('');
+      await clearAccessToken();
+      alert('Contraseña actualizada correctamente. Inicia sesión nuevamente.');
+      router.replace('/');
+    } catch (passwordChangeError: any) {
+      setPasswordError(passwordChangeError?.message || 'No se pudo cambiar la contraseña.');
+    } finally {
+      setPasswordSubmitting(false);
+    }
+  };
+
   const nombreCompleto = empleado ? `${empleado.nombre} ${empleado.apellidos}` : fullName || 'Usuario';
   const iniciales = nombreCompleto
     .split(' ')
@@ -124,6 +201,106 @@ export default function PerfilScreen() {
       { icon: 'log-out-outline', color: '#EF5350', bg: 'rgba(239, 83, 80, 0.12)', label: 'Horario de salida', value: empleado.exitTime || 'No definido' },
     ]
     : [];
+
+  const renderPasswordSection = (desktop = false) => (
+    <View style={[styles.securityCard, desktop && styles.desktopSecurityCard]}>
+      <View style={styles.securityHeader}>
+        <View style={styles.securityIcon}>
+          <Ionicons name="shield-checkmark-outline" size={24} color="#77C3FF" />
+        </View>
+        <View style={styles.securityHeaderText}>
+          <Text style={styles.securityTitle}>Cambiar contraseña</Text>
+          <Text style={styles.securitySubtitle}>La modificación solo se autoriza si tu rostro coincide con el registro biométrico.</Text>
+        </View>
+      </View>
+
+      <View style={[styles.faceStatus, faceEnrolled ? styles.faceStatusReady : styles.faceStatusPending]}>
+        {faceEnrolled === null ? (
+          <ActivityIndicator size="small" color="#77C3FF" />
+        ) : (
+          <Ionicons
+            name={faceEnrolled ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+            size={20}
+            color={faceEnrolled ? '#6EDDA5' : '#F0B45A'}
+          />
+        )}
+        <Text style={[styles.faceStatusText, faceEnrolled ? styles.faceStatusTextReady : styles.faceStatusTextPending]}>
+          {faceEnrolled === null
+            ? 'Comprobando registro facial…'
+            : faceEnrolled
+              ? 'Rostro registrado y listo para validar'
+              : 'Debes registrar tu rostro desde el Dashboard'}
+        </Text>
+      </View>
+
+      {faceStatusError ? <Text style={styles.passwordErrorText}>{faceStatusError}</Text> : null}
+
+      <Text style={styles.passwordLabel}>Nueva contraseña</Text>
+      <View style={styles.passwordInputBox}>
+        <Ionicons name="lock-closed-outline" size={19} color="#7F9BB8" />
+        <TextInput
+          value={newPassword}
+          onChangeText={setNewPassword}
+          placeholder="Mínimo 8 caracteres"
+          placeholderTextColor="#647A91"
+          secureTextEntry={!showPassword}
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="new-password"
+          textContentType="newPassword"
+          style={styles.passwordInput}
+          editable={!passwordSubmitting}
+        />
+        <TouchableOpacity
+          onPress={() => setShowPassword(current => !current)}
+          accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+          disabled={passwordSubmitting}
+          style={styles.passwordEyeButton}
+        >
+          <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#8EABC6" />
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.passwordLabel}>Confirmar contraseña</Text>
+      <View style={styles.passwordInputBox}>
+        <Ionicons name="lock-closed-outline" size={19} color="#7F9BB8" />
+        <TextInput
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          placeholder="Repite la nueva contraseña"
+          placeholderTextColor="#647A91"
+          secureTextEntry={!showPassword}
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="new-password"
+          textContentType="newPassword"
+          style={styles.passwordInput}
+          editable={!passwordSubmitting}
+          onSubmitEditing={beginPasswordChange}
+        />
+      </View>
+
+      {passwordError ? <Text style={styles.passwordErrorText}>{passwordError}</Text> : null}
+
+      <TouchableOpacity
+        style={[
+          styles.passwordButton,
+          (!faceEnrolled || passwordSubmitting) && styles.passwordButtonDisabled,
+        ]}
+        onPress={beginPasswordChange}
+        disabled={!faceEnrolled || passwordSubmitting}
+      >
+        {passwordSubmitting ? (
+          <ActivityIndicator size="small" color="#071C35" />
+        ) : (
+          <Ionicons name="scan-outline" size={21} color="#071C35" />
+        )}
+        <Text style={styles.passwordButtonText}>
+          {passwordSubmitting ? 'Actualizando contraseña…' : 'Validar rostro y cambiar contraseña'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
     <View style={[styles.container, isDesktop ? { paddingTop: 70 } : styles.mobileContainer]}>
@@ -200,6 +377,7 @@ export default function PerfilScreen() {
                 ))}
               </View>
             )}
+            {renderPasswordSection(true)}
           </View>
         </View>
       ) : (
@@ -252,9 +430,17 @@ export default function PerfilScreen() {
                   </View>
                 </View>
               ))}
+            {renderPasswordSection()}
           </View>
         </ScrollView>
       )}
+
+      <AttendanceCamera
+        visible={passwordCameraVisible}
+        mode="password-change"
+        onCancel={() => setPasswordCameraVisible(false)}
+        onConfirm={handlePasswordChangeWithFace}
+      />
     </View>
   );
 }
@@ -411,6 +597,133 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FFFFFF',
     fontWeight: '700',
+  },
+  securityCard: {
+    width: '100%',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2D4054',
+    padding: 18,
+    marginTop: 22,
+  },
+  desktopSecurityCard: {
+    backgroundColor: '#20252B',
+    maxWidth: 720,
+    alignSelf: 'center',
+    marginTop: 28,
+  },
+  securityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  securityIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: 'rgba(119, 195, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  securityHeaderText: {
+    flex: 1,
+  },
+  securityTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  securitySubtitle: {
+    color: '#91A7BC',
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 3,
+  },
+  faceStatus: {
+    minHeight: 44,
+    borderRadius: 11,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    marginBottom: 15,
+  },
+  faceStatusReady: {
+    backgroundColor: 'rgba(49, 190, 120, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(110, 221, 165, 0.28)',
+  },
+  faceStatusPending: {
+    backgroundColor: 'rgba(240, 180, 90, 0.09)',
+    borderWidth: 1,
+    borderColor: 'rgba(240, 180, 90, 0.25)',
+  },
+  faceStatusText: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  faceStatusTextReady: {
+    color: '#8BE8B8',
+  },
+  faceStatusTextPending: {
+    color: '#F3C77E',
+  },
+  passwordLabel: {
+    color: '#C5D4E3',
+    fontSize: 12.5,
+    fontWeight: '700',
+    marginBottom: 7,
+    marginTop: 4,
+  },
+  passwordInputBox: {
+    minHeight: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#344A60',
+    backgroundColor: '#131C25',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 13,
+    gap: 10,
+    marginBottom: 12,
+  },
+  passwordInput: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 14,
+    paddingVertical: 12,
+  },
+  passwordEyeButton: {
+    padding: 5,
+  },
+  passwordErrorText: {
+    color: '#FF9C9C',
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  passwordButton: {
+    minHeight: 50,
+    borderRadius: 12,
+    backgroundColor: '#77C3FF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    paddingHorizontal: 15,
+    marginTop: 5,
+  },
+  passwordButtonDisabled: {
+    opacity: 0.45,
+  },
+  passwordButtonText: {
+    color: '#071C35',
+    fontSize: 13.5,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   // Estilos específicos para escritorio
   desktopNavbar: {

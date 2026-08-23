@@ -257,91 +257,91 @@ export default function ConfiguracionScreen() {
 
         {activeTab === 'devices' && (
           <>
-        <View style={[styles.toolbar, isMobile && styles.toolbarMobile]}>
-          <View style={styles.searchBox}>
-            <Ionicons name="search-outline" size={19} color="#7F9BB8" />
-            <TextInput
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Buscar empleado o correo"
-              placeholderTextColor="#70859B"
-              style={styles.searchInput}
-            />
-          </View>
-          <TouchableOpacity style={styles.refreshButton} onPress={loadDevices} disabled={loading}>
-            <Ionicons name="refresh-outline" size={19} color="#071C35" />
-            <Text style={styles.refreshText}>Actualizar</Text>
-          </TouchableOpacity>
-        </View>
+            <View style={[styles.toolbar, isMobile && styles.toolbarMobile]}>
+              <View style={styles.searchBox}>
+                <Ionicons name="search-outline" size={19} color="#7F9BB8" />
+                <TextInput
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="Buscar empleado o correo"
+                  placeholderTextColor="#70859B"
+                  style={styles.searchInput}
+                />
+              </View>
+              <TouchableOpacity style={styles.refreshButton} onPress={loadDevices} disabled={loading}>
+                <Ionicons name="refresh-outline" size={19} color="#071C35" />
+                <Text style={styles.refreshText}>Actualizar</Text>
+              </TouchableOpacity>
+            </View>
 
-        {message ? <Text style={styles.successMessage}>{message}</Text> : null}
-        {error ? <Text style={styles.errorMessage}>{error}</Text> : null}
+            {message ? <Text style={styles.successMessage}>{message}</Text> : null}
+            {error ? <Text style={styles.errorMessage}>{error}</Text> : null}
 
-        {loading ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator color="#65B9FF" size="large" />
-            <Text style={styles.loadingText}>Cargando dispositivos…</Text>
-          </View>
-        ) : filteredUsers.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Ionicons name="laptop-outline" size={42} color="#58748F" />
-            <Text style={styles.emptyTitle}>No se encontraron usuarios</Text>
-          </View>
-        ) : (
-          <View style={styles.grid}>
-            {filteredUsers.map(user => {
-              const hasDevice = Boolean(user.deviceId && user.isActive);
-              const isOwnAccount = Number(user.userId) > 0 && user.email?.toLowerCase() === email?.toLowerCase();
-              return (
-                <View style={[styles.card, isMobile && styles.cardMobile]} key={user.userId}>
-                  <View style={[styles.cardTop, isMobile && styles.cardTopMobile]}>
-                    <View style={styles.userIcon}>
-                      <Ionicons name="person-outline" size={22} color="#77C3FF" />
-                    </View>
-                    <View style={styles.userInfo}>
-                      <Text style={styles.userName}>{user.fullName || 'Usuario sin nombre'}</Text>
-                      <Text style={styles.userEmail}>{user.email}</Text>
-                    </View>
-                    <View style={[styles.statusBadge, hasDevice ? styles.activeBadge : styles.pendingBadge]}>
-                      <Text style={[styles.statusText, hasDevice ? styles.activeText : styles.pendingText]}>
-                        {hasDevice ? 'AUTORIZADO' : 'PENDIENTE'}
-                      </Text>
-                    </View>
-                  </View>
+            {loading ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator color="#65B9FF" size="large" />
+                <Text style={styles.loadingText}>Cargando dispositivos…</Text>
+              </View>
+            ) : filteredUsers.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Ionicons name="laptop-outline" size={42} color="#58748F" />
+                <Text style={styles.emptyTitle}>No se encontraron usuarios</Text>
+              </View>
+            ) : (
+              <View style={styles.grid}>
+                {filteredUsers.map(user => {
+                  const hasDevice = Boolean(user.deviceId && user.isActive);
+                  const isOwnAccount = Number(user.userId) > 0 && user.email?.toLowerCase() === email?.toLowerCase();
+                  return (
+                    <View style={[styles.card, isMobile && styles.cardMobile]} key={user.userId}>
+                      <View style={[styles.cardTop, isMobile && styles.cardTopMobile]}>
+                        <View style={styles.userIcon}>
+                          <Ionicons name="person-outline" size={22} color="#77C3FF" />
+                        </View>
+                        <View style={styles.userInfo}>
+                          <Text style={styles.userName}>{user.fullName || 'Usuario sin nombre'}</Text>
+                          <Text style={styles.userEmail}>{user.email}</Text>
+                        </View>
+                        <View style={[styles.statusBadge, hasDevice ? styles.activeBadge : styles.pendingBadge]}>
+                          <Text style={[styles.statusText, hasDevice ? styles.activeText : styles.pendingText]}>
+                            {hasDevice ? 'AUTORIZADO' : 'PENDIENTE'}
+                          </Text>
+                        </View>
+                      </View>
 
-                  <View style={styles.devicePanel}>
-                    <View style={styles.deviceIcon}>
-                      <Ionicons name={hasDevice ? 'desktop-outline' : 'alert-circle-outline'} size={24} color={hasDevice ? '#6EDDA5' : '#F0B45A'} />
-                    </View>
-                    <View style={styles.deviceInfo}>
-                      <Text style={styles.deviceName}>{hasDevice ? user.deviceLabel || user.deviceName || 'Computadora autorizada' : 'Sin computadora autorizada'}</Text>
-                      <Text style={styles.detailText}>Autorizado: {formatDate(user.authorizedAt)}</Text>
-                      <Text style={styles.detailText}>Último acceso: {formatDate(user.lastUsedAt)}</Text>
-                    </View>
-                  </View>
+                      <View style={styles.devicePanel}>
+                        <View style={styles.deviceIcon}>
+                          <Ionicons name={hasDevice ? 'desktop-outline' : 'alert-circle-outline'} size={24} color={hasDevice ? '#6EDDA5' : '#F0B45A'} />
+                        </View>
+                        <View style={styles.deviceInfo}>
+                          <Text style={styles.deviceName}>{hasDevice ? user.deviceLabel || user.deviceName || 'Computadora autorizada' : 'Sin computadora autorizada'}</Text>
+                          <Text style={styles.detailText}>Autorizado: {formatDate(user.authorizedAt)}</Text>
+                          <Text style={styles.detailText}>Último acceso: {formatDate(user.lastUsedAt)}</Text>
+                        </View>
+                      </View>
 
-                  <TouchableOpacity
-                    style={[
-                      styles.revokeButton,
-                      (!hasDevice || isOwnAccount || revokingUserId === user.userId) && styles.disabledButton,
-                    ]}
-                    disabled={!hasDevice || isOwnAccount || revokingUserId === user.userId}
-                    onPress={() => confirmRevoke(user)}
-                  >
-                    {revokingUserId === user.userId ? (
-                      <ActivityIndicator size="small" color="#FFD6D6" />
-                    ) : (
-                      <Ionicons name="swap-horizontal-outline" size={19} color="#FFD6D6" />
-                    )}
-                    <Text style={styles.revokeText}>
-                      {isOwnAccount ? 'Equipo administrativo actual' : 'Cambiar equipo autorizado'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })}
-          </View>
-        )}
+                      <TouchableOpacity
+                        style={[
+                          styles.revokeButton,
+                          (!hasDevice || isOwnAccount || revokingUserId === user.userId) && styles.disabledButton,
+                        ]}
+                        disabled={!hasDevice || isOwnAccount || revokingUserId === user.userId}
+                        onPress={() => confirmRevoke(user)}
+                      >
+                        {revokingUserId === user.userId ? (
+                          <ActivityIndicator size="small" color="#FFD6D6" />
+                        ) : (
+                          <Ionicons name="swap-horizontal-outline" size={19} color="#FFD6D6" />
+                        )}
+                        <Text style={styles.revokeText}>
+                          {isOwnAccount ? 'Equipo administrativo actual' : 'Cambiar equipo autorizado'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
           </>
         )}
 
@@ -433,7 +433,7 @@ export default function ConfiguracionScreen() {
 
       <Modal visible={Boolean(selectedEvidence)} transparent animationType="fade" onRequestClose={closePhoto}>
         <Pressable style={styles.photoBackdrop} onPress={closePhoto}>
-          <Pressable style={[styles.photoModal, isMobile && styles.photoModalMobile]} onPress={() => {}}>
+          <Pressable style={[styles.photoModal, isMobile && styles.photoModalMobile]} onPress={() => { }}>
             <View style={styles.photoHeader}>
               <View>
                 <Text style={styles.eyebrow}>{selectedEvidence?.kind === 'enrollment' ? 'ROSTRO REGISTRADO' : 'EVIDENCIA FACIAL'}</Text>
