@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import AttendanceCamera from '../components/AttendanceCamera';
 import { apiFetch, clearAccessToken } from '../services/api';
 
@@ -34,6 +34,8 @@ export default function PerfilScreen() {
   const [passwordCameraVisible, setPasswordCameraVisible] = useState(false);
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [passwordError, setPasswordError] = useState('');
+  const [passwordNoticeVisible, setPasswordNoticeVisible] = useState(false);
+  const [dontShowPasswordNotice, setDontShowPasswordNotice] = useState(false);
   
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width > 768;
@@ -132,7 +134,7 @@ export default function PerfilScreen() {
     }
   };
 
-  const beginPasswordChange = () => {
+  const beginPasswordChange = async () => {
     setPasswordError('');
     if (!faceEnrolled) {
       setPasswordError('Necesitas tener un rostro registrado para cambiar la contraseña.');
@@ -146,6 +148,23 @@ export default function PerfilScreen() {
       setPasswordError('Las contraseñas no coinciden.');
       return;
     }
+
+    const noticeKey = `@password_change_notice_hidden_${String(email || '').trim().toLowerCase()}`;
+    const noticeHidden = await AsyncStorage.getItem(noticeKey);
+    if (noticeHidden === 'true') {
+      setPasswordCameraVisible(true);
+      return;
+    }
+    setDontShowPasswordNotice(false);
+    setPasswordNoticeVisible(true);
+  };
+
+  const continuePasswordChange = async () => {
+    if (dontShowPasswordNotice) {
+      const noticeKey = `@password_change_notice_hidden_${String(email || '').trim().toLowerCase()}`;
+      await AsyncStorage.setItem(noticeKey, 'true');
+    }
+    setPasswordNoticeVisible(false);
     setPasswordCameraVisible(true);
   };
 
@@ -239,6 +258,7 @@ export default function PerfilScreen() {
       <View style={styles.passwordInputBox}>
         <Ionicons name="lock-closed-outline" size={19} color="#7F9BB8" />
         <TextInput
+          nativeID="profile-new-password-input"
           value={newPassword}
           onChangeText={setNewPassword}
           placeholder="Mínimo 8 caracteres"
@@ -265,6 +285,7 @@ export default function PerfilScreen() {
       <View style={styles.passwordInputBox}>
         <Ionicons name="lock-closed-outline" size={19} color="#7F9BB8" />
         <TextInput
+          nativeID="profile-confirm-password-input"
           value={confirmPassword}
           onChangeText={setConfirmPassword}
           placeholder="Repite la nueva contraseña"
@@ -441,6 +462,41 @@ export default function PerfilScreen() {
         onCancel={() => setPasswordCameraVisible(false)}
         onConfirm={handlePasswordChangeWithFace}
       />
+
+      <Modal visible={passwordNoticeVisible} transparent animationType="fade" onRequestClose={() => setPasswordNoticeVisible(false)}>
+        <Pressable style={styles.noticeOverlay} onPress={() => setPasswordNoticeVisible(false)}>
+          <Pressable style={styles.noticeCard} onPress={() => {}}>
+            <View style={styles.noticeIcon}>
+              <Ionicons name="information-circle-outline" size={30} color="#77C3FF" />
+            </View>
+            <Text style={styles.noticeTitle}>Antes de continuar</Text>
+            <Text style={styles.noticeText}>
+              Esta contraseña también cambiará tu acceso al gestor de planillas y finanzas, porque ambas plataformas usan la misma cuenta.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.noticeCheckRow}
+              onPress={() => setDontShowPasswordNotice(current => !current)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.noticeCheckbox, dontShowPasswordNotice && styles.noticeCheckboxChecked]}>
+                {dontShowPasswordNotice && <Ionicons name="checkmark" size={16} color="#071C35" />}
+              </View>
+              <Text style={styles.noticeCheckText}>No volver a mostrar este aviso</Text>
+            </TouchableOpacity>
+
+            <View style={styles.noticeActions}>
+              <TouchableOpacity style={styles.noticeCancelButton} onPress={() => setPasswordNoticeVisible(false)}>
+                <Text style={styles.noticeCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.noticeContinueButton} onPress={continuePasswordChange}>
+                <Text style={styles.noticeContinueText}>Continuar</Text>
+                <Ionicons name="arrow-forward" size={18} color="#071C35" />
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -724,6 +780,102 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '800',
     textAlign: 'center',
+  },
+  noticeOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 22,
+  },
+  noticeCard: {
+    width: '100%',
+    maxWidth: 430,
+    borderRadius: 20,
+    backgroundColor: '#1E252C',
+    borderWidth: 1,
+    borderColor: '#344A60',
+    padding: 22,
+  },
+  noticeIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 17,
+    backgroundColor: 'rgba(119, 195, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 15,
+  },
+  noticeTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 9,
+  },
+  noticeText: {
+    color: '#B5C5D4',
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  noticeCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 20,
+    paddingVertical: 7,
+  },
+  noticeCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#7890A7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noticeCheckboxChecked: {
+    backgroundColor: '#77C3FF',
+    borderColor: '#77C3FF',
+  },
+  noticeCheckText: {
+    flex: 1,
+    color: '#D5E0EA',
+    fontSize: 13.5,
+    fontWeight: '600',
+  },
+  noticeActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  noticeCancelButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#455A6F',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noticeCancelText: {
+    color: '#C1CFDC',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  noticeContinueButton: {
+    flex: 1.25,
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: '#77C3FF',
+    flexDirection: 'row',
+    gap: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noticeContinueText: {
+    color: '#071C35',
+    fontSize: 14,
+    fontWeight: '800',
   },
   // Estilos específicos para escritorio
   desktopNavbar: {

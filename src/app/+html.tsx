@@ -79,6 +79,36 @@ export default function Root({ children }: PropsWithChildren) {
                 caret-color: #005FF7 !important;
                 transition: background-color 9999s ease-in-out 0s !important;
               }
+
+              #profile-new-password-input,
+              #profile-confirm-password-input {
+                color: #FFFFFF !important;
+                background: transparent !important;
+                border: 0 !important;
+                outline: none !important;
+                box-shadow: none !important;
+                -webkit-appearance: none !important;
+              }
+
+              #profile-new-password-input:focus,
+              #profile-confirm-password-input:focus,
+              #profile-new-password-input:autofill,
+              #profile-confirm-password-input:autofill,
+              #profile-new-password-input:-webkit-autofill,
+              #profile-confirm-password-input:-webkit-autofill,
+              #profile-new-password-input:-webkit-autofill:hover,
+              #profile-confirm-password-input:-webkit-autofill:hover,
+              #profile-new-password-input:-webkit-autofill:focus,
+              #profile-confirm-password-input:-webkit-autofill:focus {
+                color: #FFFFFF !important;
+                -webkit-text-fill-color: #FFFFFF !important;
+                background: transparent !important;
+                border: 0 !important;
+                outline: none !important;
+                box-shadow: none !important;
+                -webkit-box-shadow: 0 0 0 1000px #131C25 inset !important;
+                caret-color: #77C3FF !important;
+              }
             `,
           }}
         />
