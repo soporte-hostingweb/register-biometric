@@ -4,8 +4,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import AttendanceCamera from '../components/AttendanceCamera';
 import { apiFetch, clearAccessToken } from '../services/api';
+import { createDeviceAuthenticationCredential } from '../services/device-auth';
 
 type Empleado = {
   nombre: string;
@@ -26,12 +26,9 @@ export default function PerfilScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [faceEnrolled, setFaceEnrolled] = useState<boolean | null>(null);
-  const [faceStatusError, setFaceStatusError] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [passwordCameraVisible, setPasswordCameraVisible] = useState(false);
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [passwordError, setPasswordError] = useState('');
   const [passwordNoticeVisible, setPasswordNoticeVisible] = useState(false);
@@ -88,25 +85,6 @@ export default function PerfilScreen() {
     }
   }, [email]);
 
-  useEffect(() => {
-    const fetchFaceStatus = async () => {
-      setFaceStatusError('');
-      try {
-        const response = await apiFetch('/api/attendance/face-status');
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(data?.message || 'No se pudo comprobar el registro facial.');
-        }
-        setFaceEnrolled(Boolean(data?.enrolled));
-      } catch (faceError: any) {
-        setFaceEnrolled(false);
-        setFaceStatusError(faceError?.message || 'No se pudo comprobar el registro facial.');
-      }
-    };
-
-    if (email) fetchFaceStatus();
-  }, [email]);
-
   const handlePickImage = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -136,10 +114,6 @@ export default function PerfilScreen() {
 
   const beginPasswordChange = async () => {
     setPasswordError('');
-    if (!faceEnrolled) {
-      setPasswordError('Necesitas tener un rostro registrado para cambiar la contraseña.');
-      return;
-    }
     if (newPassword.length < 8 || newPassword.length > 128) {
       setPasswordError('La nueva contraseña debe tener entre 8 y 128 caracteres.');
       return;
@@ -152,7 +126,7 @@ export default function PerfilScreen() {
     const noticeKey = `@password_change_notice_hidden_${String(email || '').trim().toLowerCase()}`;
     const noticeHidden = await AsyncStorage.getItem(noticeKey);
     if (noticeHidden === 'true') {
-      setPasswordCameraVisible(true);
+      await changePasswordWithDeviceSecurity();
       return;
     }
     setDontShowPasswordNotice(false);
@@ -165,27 +139,35 @@ export default function PerfilScreen() {
       await AsyncStorage.setItem(noticeKey, 'true');
     }
     setPasswordNoticeVisible(false);
-    setPasswordCameraVisible(true);
+    await changePasswordWithDeviceSecurity();
   };
 
-  const handlePasswordChangeWithFace = async (photoData: string, faceDescriptor: number[]) => {
-    setPasswordCameraVisible(false);
+  const changePasswordWithDeviceSecurity = async () => {
     setPasswordSubmitting(true);
     setPasswordError('');
     try {
-      const response = await apiFetch('/api/auth/change-password-with-face', {
+      const optionsResponse = await apiFetch('/api/auth/change-password/device/options', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const optionsData = await optionsResponse.json().catch(() => null);
+      if (!optionsResponse.ok || !optionsData?.options || !optionsData?.deviceFlowToken) {
+        throw new Error(optionsData?.message || 'No se pudo iniciar la validación del dispositivo.');
+      }
+
+      const credential = await createDeviceAuthenticationCredential(optionsData.options);
+      const response = await apiFetch('/api/auth/change-password/device/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           newPassword,
-          photoData,
-          faceDescriptor,
-          faceModel: 'human-faceres-v1',
+          deviceFlowToken: optionsData.deviceFlowToken,
+          credential,
         }),
       });
       const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(data?.message || 'No se pudo cambiar la contraseña.');
+        throw new Error(data?.message || `No se pudo cambiar la contraseña (error ${response.status}).`);
       }
 
       setNewPassword('');
@@ -194,7 +176,10 @@ export default function PerfilScreen() {
       alert('Contraseña actualizada correctamente. Inicia sesión nuevamente.');
       router.replace('/');
     } catch (passwordChangeError: any) {
-      setPasswordError(passwordChangeError?.message || 'No se pudo cambiar la contraseña.');
+      const wasCancelled = passwordChangeError?.name === 'NotAllowedError';
+      setPasswordError(wasCancelled
+        ? 'La validación del dispositivo fue cancelada o expiró.'
+        : passwordChangeError?.message || 'No se pudo cambiar la contraseña.');
     } finally {
       setPasswordSubmitting(false);
     }
@@ -229,30 +214,16 @@ export default function PerfilScreen() {
         </View>
         <View style={styles.securityHeaderText}>
           <Text style={styles.securityTitle}>Cambiar contraseña</Text>
-          <Text style={styles.securitySubtitle}>La modificación solo se autoriza si tu rostro coincide con el registro biométrico.</Text>
+          <Text style={styles.securitySubtitle}>Confirma tu identidad con la seguridad configurada en este dispositivo.</Text>
         </View>
       </View>
 
-      <View style={[styles.faceStatus, faceEnrolled ? styles.faceStatusReady : styles.faceStatusPending]}>
-        {faceEnrolled === null ? (
-          <ActivityIndicator size="small" color="#77C3FF" />
-        ) : (
-          <Ionicons
-            name={faceEnrolled ? 'checkmark-circle-outline' : 'alert-circle-outline'}
-            size={20}
-            color={faceEnrolled ? '#6EDDA5' : '#F0B45A'}
-          />
-        )}
-        <Text style={[styles.faceStatusText, faceEnrolled ? styles.faceStatusTextReady : styles.faceStatusTextPending]}>
-          {faceEnrolled === null
-            ? 'Comprobando registro facial…'
-            : faceEnrolled
-              ? 'Rostro registrado y listo para validar'
-              : 'Debes registrar tu rostro desde el Dashboard'}
+      <View style={[styles.faceStatus, styles.faceStatusReady]}>
+        <Ionicons name="shield-checkmark-outline" size={20} color="#6EDDA5" />
+        <Text style={[styles.faceStatusText, styles.faceStatusTextReady]}>
+          Compatible con huella, Face ID, Touch ID, PIN o código
         </Text>
       </View>
-
-      {faceStatusError ? <Text style={styles.passwordErrorText}>{faceStatusError}</Text> : null}
 
       <Text style={styles.passwordLabel}>Nueva contraseña</Text>
       <View style={styles.passwordInputBox}>
@@ -306,18 +277,18 @@ export default function PerfilScreen() {
       <TouchableOpacity
         style={[
           styles.passwordButton,
-          (!faceEnrolled || passwordSubmitting) && styles.passwordButtonDisabled,
+          passwordSubmitting && styles.passwordButtonDisabled,
         ]}
         onPress={beginPasswordChange}
-        disabled={!faceEnrolled || passwordSubmitting}
+        disabled={passwordSubmitting}
       >
         {passwordSubmitting ? (
           <ActivityIndicator size="small" color="#071C35" />
         ) : (
-          <Ionicons name="scan-outline" size={21} color="#071C35" />
+          <Ionicons name="finger-print-outline" size={21} color="#071C35" />
         )}
         <Text style={styles.passwordButtonText}>
-          {passwordSubmitting ? 'Actualizando contraseña…' : 'Validar rostro y cambiar contraseña'}
+          {passwordSubmitting ? 'Validando dispositivo…' : 'Confirmar identidad y cambiar contraseña'}
         </Text>
       </TouchableOpacity>
     </View>
@@ -455,13 +426,6 @@ export default function PerfilScreen() {
           </View>
         </ScrollView>
       )}
-
-      <AttendanceCamera
-        visible={passwordCameraVisible}
-        mode="password-change"
-        onCancel={() => setPasswordCameraVisible(false)}
-        onConfirm={handlePasswordChangeWithFace}
-      />
 
       <Modal visible={passwordNoticeVisible} transparent animationType="fade" onRequestClose={() => setPasswordNoticeVisible(false)}>
         <Pressable style={styles.noticeOverlay} onPress={() => setPasswordNoticeVisible(false)}>

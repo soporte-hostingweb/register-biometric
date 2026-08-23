@@ -63,8 +63,7 @@ async function registerComputer(flow: any) {
   return postVerification('/api/device/register/verify', flow.deviceFlowToken, credential);
 }
 
-async function authenticateComputer(flow: any) {
-  const options = flow.options;
+export async function createDeviceAuthenticationCredential(options: any) {
   const publicKey: PublicKeyCredentialRequestOptions = {
     ...options,
     challenge: base64urlToBytes(options.challenge),
@@ -89,6 +88,11 @@ async function authenticateComputer(flow: any) {
     clientExtensionResults: result.getClientExtensionResults(),
     authenticatorAttachment: result.authenticatorAttachment,
   };
+  return credential;
+}
+
+async function authenticateComputer(flow: any) {
+  const credential = await createDeviceAuthenticationCredential(flow.options);
   return postVerification('/api/device/authenticate/verify', flow.deviceFlowToken, credential);
 }
 
