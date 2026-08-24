@@ -65,6 +65,7 @@ export default function ConfiguracionScreen() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [revokingUserId, setRevokingUserId] = useState<number | null>(null);
+  const [resettingUserId, setResettingUserId] = useState<number | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'devices' | 'evidence'>('devices');
@@ -216,6 +217,34 @@ export default function ConfiguracionScreen() {
     ]);
   };
 
+  const sendPasswordReset = async (user: AuthorizedDeviceUser) => {
+    setResettingUserId(user.userId);
+    setError('');
+    setMessage('');
+    try {
+      const response = await apiFetch(`/api/admin/users/${user.userId}/password-reset`, { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || 'No se pudo enviar el cambio de contraseña.');
+      setMessage(data.message || `Enlace enviado a ${user.email}.`);
+    } catch (resetError: any) {
+      setError(resetError.message || 'No se pudo enviar el cambio de contraseña.');
+    } finally {
+      setResettingUserId(null);
+    }
+  };
+
+  const confirmPasswordReset = (user: AuthorizedDeviceUser) => {
+    const prompt = `Se enviará a ${user.email} un enlace de un solo uso para crear una nueva contraseña. El enlace vencerá en 30 minutos.`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(prompt)) sendPasswordReset(user);
+      return;
+    }
+    Alert.alert('Enviar cambio de contraseña', prompt, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Enviar enlace', onPress: () => sendPasswordReset(user) },
+    ]);
+  };
+
   if (rol !== 'SUPER_ADMIN') return null;
 
   return (
@@ -336,6 +365,19 @@ export default function ConfiguracionScreen() {
                         <Text style={styles.revokeText}>
                           {isOwnAccount ? 'Equipo administrativo actual' : 'Cambiar equipo autorizado'}
                         </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.passwordResetButton, resettingUserId === user.userId && styles.disabledButton]}
+                        disabled={resettingUserId === user.userId}
+                        onPress={() => confirmPasswordReset(user)}
+                      >
+                        {resettingUserId === user.userId ? (
+                          <ActivityIndicator size="small" color="#BFE4FF" />
+                        ) : (
+                          <Ionicons name="mail-outline" size={19} color="#BFE4FF" />
+                        )}
+                        <Text style={styles.passwordResetText}>Enviar cambio de contraseña</Text>
                       </TouchableOpacity>
                     </View>
                   );
@@ -516,6 +558,8 @@ const styles: Record<string, any> = {
   revokeButton: { marginTop: 14, minHeight: 44, borderRadius: 11, backgroundColor: '#57232A', borderWidth: 1, borderColor: '#80404A', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   disabledButton: { opacity: 0.42 },
   revokeText: { color: '#FFD6D6', fontSize: 12.5, fontWeight: '800' },
+  passwordResetButton: { marginTop: 9, minHeight: 44, borderRadius: 11, backgroundColor: '#123656', borderWidth: 1, borderColor: '#2C628D', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  passwordResetText: { color: '#BFE4FF', fontSize: 12.5, fontWeight: '800' },
   evidenceFilters: { width: '100%', flexDirection: 'row', gap: 8, padding: 5, marginBottom: 14, borderRadius: 13, borderWidth: 1, borderColor: '#213D56', backgroundColor: '#091725' },
   evidenceFilter: { flex: 1, minHeight: 44, paddingHorizontal: 8, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   evidenceFilterActive: { backgroundColor: '#77C3FF' },
