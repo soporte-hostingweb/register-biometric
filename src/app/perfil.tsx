@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { apiFetch, clearAccessToken } from '../services/api';
 import { createDeviceAuthenticationCredential } from '../services/device-auth';
+import { useLanguage } from '../services/language';
 
 type Empleado = {
   nombre: string;
@@ -21,6 +22,7 @@ type Empleado = {
 };
 
 export default function PerfilScreen() {
+  const { language, setLanguage, tr } = useLanguage();
   const { fullName, rol, email } = useLocalSearchParams<{ fullName: string; rol: string; email: string }>();
   const [empleado, setEmpleado] = useState<Empleado | null>(null);
   const [loading, setLoading] = useState(true);
@@ -223,11 +225,11 @@ export default function PerfilScreen() {
 
   const datos = empleado
     ? [
-      { icon: 'card-outline', color: '#208AEF', bg: 'rgba(32, 138, 239, 0.12)', label: 'DNI', value: empleado.dni || 'No registrado' },
-      { icon: 'call-outline', color: '#66BB6A', bg: 'rgba(102, 187, 106, 0.12)', label: 'Celular', value: empleado.telefono || 'Sin definir' },
-      { icon: 'briefcase-outline', color: '#AB47BC', bg: 'rgba(171, 71, 188, 0.12)', label: 'Cargo', value: empleado.cargo || 'No definido' },
-      { icon: 'log-in-outline', color: '#FFA726', bg: 'rgba(255, 167, 38, 0.12)', label: 'Horario de entrada', value: empleado.entryTime || 'No definido' },
-      { icon: 'log-out-outline', color: '#EF5350', bg: 'rgba(239, 83, 80, 0.12)', label: 'Horario de salida', value: empleado.exitTime || 'No definido' },
+      { icon: 'card-outline', color: '#208AEF', bg: 'rgba(32, 138, 239, 0.12)', label: 'DNI', value: empleado.dni || tr('Not registered', 'No registrado') },
+      { icon: 'call-outline', color: '#66BB6A', bg: 'rgba(102, 187, 106, 0.12)', label: tr('Phone', 'Celular'), value: empleado.telefono || tr('Not specified', 'Sin definir') },
+      { icon: 'briefcase-outline', color: '#AB47BC', bg: 'rgba(171, 71, 188, 0.12)', label: tr('Position', 'Cargo'), value: empleado.cargo || tr('Not specified', 'No definido') },
+      { icon: 'log-in-outline', color: '#FFA726', bg: 'rgba(255, 167, 38, 0.12)', label: tr('Start time', 'Horario de entrada'), value: empleado.entryTime || tr('Not specified', 'No definido') },
+      { icon: 'log-out-outline', color: '#EF5350', bg: 'rgba(239, 83, 80, 0.12)', label: tr('End time', 'Horario de salida'), value: empleado.exitTime || tr('Not specified', 'No definido') },
     ]
     : [];
 
@@ -238,26 +240,26 @@ export default function PerfilScreen() {
           <Ionicons name="shield-checkmark-outline" size={24} color="#77C3FF" />
         </View>
         <View style={styles.securityHeaderText}>
-          <Text style={styles.securityTitle}>Cambiar contraseña</Text>
-          <Text style={styles.securitySubtitle}>Confirma tu identidad con la seguridad configurada en este dispositivo.</Text>
+          <Text style={styles.securityTitle}>{tr('Change password', 'Cambiar contraseña')}</Text>
+          <Text style={styles.securitySubtitle}>{tr('Confirm your identity using the security configured on this device.', 'Confirma tu identidad con la seguridad configurada en este dispositivo.')}</Text>
         </View>
       </View>
 
       <View style={[styles.faceStatus, styles.faceStatusReady]}>
         <Ionicons name="shield-checkmark-outline" size={20} color="#6EDDA5" />
         <Text style={[styles.faceStatusText, styles.faceStatusTextReady]}>
-          Compatible con huella, Face ID, Touch ID, PIN o código
+          {tr('Works with fingerprint, Face ID, Touch ID, PIN or passcode', 'Compatible con huella, Face ID, Touch ID, PIN o código')}
         </Text>
       </View>
 
-      <Text style={styles.passwordLabel}>Nueva contraseña</Text>
+      <Text style={styles.passwordLabel}>{tr('New password', 'Nueva contraseña')}</Text>
       <View style={styles.passwordInputBox}>
         <Ionicons name="lock-closed-outline" size={19} color="#7F9BB8" />
         <TextInput
           nativeID="profile-new-password-input"
           value={newPassword}
           onChangeText={setNewPassword}
-          placeholder="Mínimo 8 caracteres"
+          placeholder={tr('At least 8 characters', 'Mínimo 8 caracteres')}
           placeholderTextColor="#647A91"
           secureTextEntry={!showPassword}
           autoCapitalize="none"
@@ -277,14 +279,14 @@ export default function PerfilScreen() {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.passwordLabel}>Confirmar contraseña</Text>
+      <Text style={styles.passwordLabel}>{tr('Confirm password', 'Confirmar contraseña')}</Text>
       <View style={styles.passwordInputBox}>
         <Ionicons name="lock-closed-outline" size={19} color="#7F9BB8" />
         <TextInput
           nativeID="profile-confirm-password-input"
           value={confirmPassword}
           onChangeText={setConfirmPassword}
-          placeholder="Repite la nueva contraseña"
+          placeholder={tr('Repeat the new password', 'Repite la nueva contraseña')}
           placeholderTextColor="#647A91"
           secureTextEntry={!showPassword}
           autoCapitalize="none"
@@ -313,9 +315,37 @@ export default function PerfilScreen() {
           <Ionicons name="finger-print-outline" size={21} color="#071C35" />
         )}
         <Text style={styles.passwordButtonText}>
-          {passwordSubmitting ? 'Validando dispositivo…' : 'Confirmar identidad y cambiar contraseña'}
+          {passwordSubmitting ? tr('Verifying device…', 'Validando dispositivo…') : tr('Confirm identity and change password', 'Confirmar identidad y cambiar contraseña')}
         </Text>
       </TouchableOpacity>
+    </View>
+  );
+
+  const renderLanguageSection = (desktop = false) => (
+    <View style={[styles.languageCard, desktop && styles.desktopSecurityCard]}>
+      <View style={styles.securityHeader}>
+        <View style={styles.securityIcon}>
+          <Ionicons name="language-outline" size={24} color="#77C3FF" />
+        </View>
+        <View style={styles.securityHeaderText}>
+          <Text style={styles.securityTitle}>{tr('Language', 'Idioma')}</Text>
+          <Text style={styles.securitySubtitle}>{tr('Choose the language used throughout the application.', 'Elige el idioma que se usará en toda la aplicación.')}</Text>
+        </View>
+      </View>
+      <View style={styles.languageOptions}>
+        <TouchableOpacity
+          style={[styles.languageOption, language === 'en' && styles.languageOptionActive]}
+          onPress={() => setLanguage('en')}
+        >
+          <Text style={[styles.languageOptionText, language === 'en' && styles.languageOptionTextActive]}>English</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.languageOption, language === 'es' && styles.languageOptionActive]}
+          onPress={() => setLanguage('es')}
+        >
+          <Text style={[styles.languageOptionText, language === 'es' && styles.languageOptionTextActive]}>Español</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -327,7 +357,7 @@ export default function PerfilScreen() {
             <Ionicons name="arrow-back" size={18} color="#5CADFF" />
             <Text style={styles.desktopNavBackText}>Volver al Dashboard</Text>
           </TouchableOpacity>
-          <Text style={styles.desktopNavTitle}>Perfil de Colaborador</Text>
+          <Text style={styles.desktopNavTitle}>{tr('Employee Profile', 'Perfil de Colaborador')}</Text>
           <Image source={require('../../assets/images/icon.png')} style={styles.desktopNavLogo} />
         </View>
       )}
@@ -363,7 +393,7 @@ export default function PerfilScreen() {
               )}
               <View style={styles.activeStatusBadge}>
                 <View style={styles.activeStatusDot} />
-                <Text style={styles.activeStatusText}>Cuenta Activa</Text>
+                <Text style={styles.activeStatusText}>{tr('Active Account', 'Cuenta Activa')}</Text>
               </View>
             </View>
           </View>
@@ -373,8 +403,8 @@ export default function PerfilScreen() {
 
           {/* Grid de Datos del Colaborador */}
           <View style={styles.desktopDetailsSection}>
-            <Text style={styles.desktopDetailsTitle}>Información del Colaborador</Text>
-            <Text style={styles.desktopDetailsSubtitle}>Detalles de tu cuenta registrados en el sistema de HWPerú</Text>
+            <Text style={styles.desktopDetailsTitle}>{tr('Employee Information', 'Información del Colaborador')}</Text>
+            <Text style={styles.desktopDetailsSubtitle}>{tr('Your account details registered in the HWPerú system', 'Detalles de tu cuenta registrados en el sistema de HWPerú')}</Text>
 
             {loading && <ActivityIndicator style={{ marginTop: 20 }} color="#208AEF" />}
             {!loading && error !== '' && <Text style={styles.errorText}>{error}</Text>}
@@ -394,6 +424,7 @@ export default function PerfilScreen() {
                 ))}
               </View>
             )}
+            {renderLanguageSection(true)}
             {renderPasswordSection(true)}
           </View>
         </View>
@@ -407,7 +438,7 @@ export default function PerfilScreen() {
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
               <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Mi perfil</Text>
+            <Text style={styles.headerTitle}>{tr('My profile', 'Mi perfil')}</Text>
           </View>
 
           <View style={styles.avatarWrapper}>
@@ -447,6 +478,7 @@ export default function PerfilScreen() {
                   </View>
                 </View>
               ))}
+            {renderLanguageSection()}
             {renderPasswordSection()}
           </View>
         </ScrollView>
@@ -651,6 +683,41 @@ const styles = StyleSheet.create({
     borderColor: '#2D4054',
     padding: 18,
     marginTop: 22,
+  },
+  languageCard: {
+    width: '100%',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2D4054',
+    padding: 18,
+    marginTop: 22,
+  },
+  languageOptions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  languageOption: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#34506B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#142536',
+  },
+  languageOptionActive: {
+    backgroundColor: '#77C3FF',
+    borderColor: '#77C3FF',
+  },
+  languageOptionText: {
+    color: '#B9CCE0',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  languageOptionTextActive: {
+    color: '#071C35',
   },
   desktopSecurityCard: {
     backgroundColor: '#20252B',

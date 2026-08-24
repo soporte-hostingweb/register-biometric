@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { analyzeFace, loadFaceEngine } from '../services/face-biometric.web';
+import { useLanguage } from '../services/language';
 
 type AttendanceCameraProps = {
   visible: boolean;
@@ -18,8 +19,6 @@ export type EnrollmentCapture = {
 };
 
 const enrollmentAngles: EnrollmentCapture['angle'][] = ['right', 'left', 'front'];
-const enrollmentLabels = { front: 'Mira de frente', left: 'Gira hacia tu izquierda', right: 'Gira hacia tu derecha' };
-
 const VideoElement = 'video' as any;
 const CanvasElement = 'canvas' as any;
 
@@ -52,6 +51,12 @@ export default function AttendanceCamera({
   onCancel,
   onConfirm,
 }: AttendanceCameraProps) {
+  const { tr } = useLanguage();
+  const enrollmentLabel = (angle: EnrollmentCapture['angle']) => angle === 'front'
+    ? tr('Look straight ahead', 'Mira de frente')
+    : angle === 'left'
+      ? tr('Turn to your left', 'Gira hacia tu izquierda')
+      : tr('Turn to your right', 'Gira hacia tu derecha');
   const isPasswordChange = mode === 'password-change';
   const { width: viewportWidth } = useWindowDimensions();
   const compactCamera = viewportWidth <= 600;
@@ -243,13 +248,13 @@ export default function AttendanceCamera({
         <View style={styles.modalCard}>
           <View style={styles.header}>
             <View>
-              <Text style={styles.eyebrow}>{mode === 'enrollment' ? 'REGISTRO BIOMÉTRICO' : 'VERIFICACIÓN BIOMÉTRICA'}</Text>
+              <Text style={styles.eyebrow}>{mode === 'enrollment' ? tr('BIOMETRIC ENROLLMENT', 'REGISTRO BIOMÉTRICO') : tr('BIOMETRIC VERIFICATION', 'VERIFICACIÓN BIOMÉTRICA')}</Text>
               <Text style={styles.title}>
                 {mode === 'enrollment'
-                  ? 'Registrar mi rostro'
+                  ? tr('Register my face', 'Registrar mi rostro')
                   : isPasswordChange
-                    ? 'Confirmar cambio de contraseña'
-                    : `Marcar ${attendanceType}`}
+                    ? tr('Confirm password change', 'Confirmar cambio de contraseña')
+                    : attendanceType === 'Entrada' ? tr('Clock in', 'Marcar Entrada') : tr('Clock out', 'Marcar Salida')}
               </Text>
             </View>
             <Pressable onPress={closeModal} style={styles.closeButton} disabled={processing}>
@@ -261,20 +266,20 @@ export default function AttendanceCamera({
             <View>
               <View style={styles.tipsHero}>
                 <Ionicons name="scan-circle-outline" size={64} color="#65B9FF" />
-                <Text style={styles.tipsTitle}>Prepara tu rostro</Text>
+                <Text style={styles.tipsTitle}>{tr('Prepare your face', 'Prepara tu rostro')}</Text>
                 <Text style={styles.tipsDescription}>
                   {mode === 'enrollment'
-                    ? 'Tu rostro quedará asociado exclusivamente a esta cuenta para validar futuras marcaciones.'
+                    ? tr('Your face will be linked exclusively to this account to validate future attendance.', 'Tu rostro quedará asociado exclusivamente a esta cuenta para validar futuras marcaciones.')
                     : isPasswordChange
-                      ? 'Compararemos esta captura con el rostro registrado antes de autorizar la nueva contraseña.'
-                      : 'La captura será automática cuando la imagen sea nítida y se valide un rostro real.'}
+                      ? tr('We will compare this capture with your registered face before authorizing the new password.', 'Compararemos esta captura con el rostro registrado antes de autorizar la nueva contraseña.')
+                      : tr('The photo will be captured automatically when the image is clear and a real face is validated.', 'La captura será automática cuando la imagen sea nítida y se valide un rostro real.')}
                 </Text>
               </View>
               {[
-                ['sunny-outline', 'Busca un lugar con buena iluminación.'],
-                ['person-outline', 'Mira de frente y mantén todo el rostro visible.'],
-                ['glasses-outline', 'Retira gorra, mascarilla o elementos que cubran el rostro.'],
-                ['people-outline', 'Asegúrate de aparecer tú solo en la imagen.'],
+                ['sunny-outline', tr('Find a well-lit place.', 'Busca un lugar con buena iluminación.')],
+                ['person-outline', tr('Look straight ahead and keep your entire face visible.', 'Mira de frente y mantén todo el rostro visible.')],
+                ['glasses-outline', tr('Remove hats, masks, or anything covering your face.', 'Retira gorra, mascarilla o elementos que cubran el rostro.')],
+                ['people-outline', tr('Make sure you are the only person in the image.', 'Asegúrate de aparecer tú solo en la imagen.')],
               ].map(([icon, tip]) => (
                 <View style={styles.tipRow} key={tip}>
                   <Ionicons name={icon as any} size={21} color="#7EC3FF" />
@@ -290,10 +295,10 @@ export default function AttendanceCamera({
                 <Ionicons name="camera-outline" size={21} color="#071C35" />
                 <Text style={styles.primaryButtonText}>
                   {startingCamera
-                    ? 'Abriendo cámara…'
+                    ? tr('Opening camera…', 'Abriendo cámara…')
                     : mode === 'enrollment'
-                      ? 'Registrar mi rostro'
-                      : 'Iniciar verificación facial'}
+                      ? tr('Register my face', 'Registrar mi rostro')
+                      : tr('Start facial verification', 'Iniciar verificación facial')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -310,21 +315,21 @@ export default function AttendanceCamera({
                   color="#65B9FF"
                 />
               </View>
-              <Text style={styles.poseStep}>CAPTURA {enrollmentIndex + 1} DE 3</Text>
-              <Text style={styles.poseTitle}>{enrollmentLabels[enrollmentAngles[enrollmentIndex]]}</Text>
+              <Text style={styles.poseStep}>{tr('CAPTURE', 'CAPTURA')} {enrollmentIndex + 1} {tr('OF', 'DE')} 3</Text>
+              <Text style={styles.poseTitle}>{enrollmentLabel(enrollmentAngles[enrollmentIndex])}</Text>
               <Text style={styles.poseDescription}>
                 {enrollmentAngles[enrollmentIndex] === 'front'
                   ? 'Mantén la cabeza recta y mira directamente a la cámara.'
                   : `Gira lentamente la cara hacia tu ${enrollmentAngles[enrollmentIndex] === 'right' ? 'derecha' : 'izquierda'}, sin mover los hombros.`}
               </Text>
-              <Text style={styles.poseDescription}>La captura será automática cuando el círculo verde se complete.</Text>
+              <Text style={styles.poseDescription}>{tr('The photo will be captured automatically when the green circle is complete.', 'La captura será automática cuando el círculo verde se complete.')}</Text>
               <TouchableOpacity
                 style={[styles.primaryButton, startingCamera && styles.disabledButton]}
                 onPress={startCamera}
                 disabled={startingCamera}
               >
                 <Ionicons name="camera-outline" size={21} color="#071C35" />
-                <Text style={styles.primaryButtonText}>{startingCamera ? 'Abriendo cámara…' : 'Continuar'}</Text>
+                <Text style={styles.primaryButtonText}>{startingCamera ? tr('Opening camera…', 'Abriendo cámara…') : tr('Continue', 'Continuar')}</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -346,13 +351,13 @@ export default function AttendanceCamera({
               </View>
               {mode === 'enrollment' && (
                 <Text style={styles.poseInstruction}>
-                  Paso {enrollmentIndex + 1} de 3: {enrollmentLabels[enrollmentAngles[enrollmentIndex]]}
+                  {tr('Step', 'Paso')} {enrollmentIndex + 1} {tr('of', 'de')} 3: {enrollmentLabel(enrollmentAngles[enrollmentIndex])}
                 </Text>
               )}
               <CanvasElement ref={canvasRef} style={{ display: 'none' }} />
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
               <View style={styles.progressStatus}>
-                <Text style={styles.progressStatusText}>{processing ? 'Procesando…' : `${scanProgress}%`}</Text>
+                <Text style={styles.progressStatusText}>{processing ? tr('Processing…', 'Procesando…') : `${scanProgress}%`}</Text>
               </View>
             </View>
           )}

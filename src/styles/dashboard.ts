@@ -404,6 +404,13 @@ export const styles = StyleSheet.create({
     borderRadius: 22,
     padding: 24,
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  avatarPhoto: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 19,
+    resizeMode: 'cover',
   },
   pushPermissionIcon: {
     width: 64,

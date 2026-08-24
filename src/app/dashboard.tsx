@@ -3,15 +3,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { Image, Modal, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch, logoutFromApi } from '../services/api';
 import { getWebPushPermission, subscribeToWebPush, supportsWebPush } from '../services/web-push';
 import AttendanceCamera from '../components/AttendanceCamera';
 import type { EnrollmentCapture } from '../components/AttendanceCamera.web';
 import { styles } from '../styles/dashboard';
+import { useLanguage } from '../services/language';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -121,6 +122,7 @@ const formatLocalTimeFromUTC = (timeStr?: string | null, dateStr?: string | null
 };
 
 export default function Dashboard() {
+  const { tr } = useLanguage();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [marcaciones, setMarcaciones] = useState<Marcacion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -135,9 +137,40 @@ export default function Dashboard() {
   const [showPushPrompt, setShowPushPrompt] = useState(false);
   const [pushActivating, setPushActivating] = useState(false);
   const [pushMessage, setPushMessage] = useState('');
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width > 768;
   const { fullName, rol, email } = useLocalSearchParams<{ fullName: string; rol: string; email: string }>();
+
+  useFocusEffect(useCallback(() => {
+    if (!email) return;
+    let objectUrl: string | null = null;
+    const loadProfilePhoto = async () => {
+      try {
+        const response = await apiFetch(`/api/auth/profile/photo?t=${Date.now()}`);
+        if (response.ok) {
+          const blob = await response.blob();
+          const uri = Platform.OS === 'web'
+            ? URL.createObjectURL(blob)
+            : await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result));
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+          objectUrl = Platform.OS === 'web' ? uri : null;
+          setProfilePhoto(uri);
+          return;
+        }
+        const cached = await AsyncStorage.getItem(`@profile_photo_${email.trim().toLowerCase()}`);
+        if (cached?.startsWith('data:image/')) setProfilePhoto(cached);
+      } catch {
+        setProfilePhoto(null);
+      }
+    };
+    loadProfilePhoto();
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [email]));
 
   useEffect(() => {
     const fetchFaceStatus = async () => {
@@ -857,13 +890,15 @@ export default function Dashboard() {
     <SafeAreaView style={styles.wrapper} edges={['top']}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Hola, {fullName}</Text>
-          {cargo && <Text style={styles.roleTag}>Cargo: {cargo}</Text>}
+          <Text style={styles.greeting}>{tr('Hello', 'Hola')}, {fullName}</Text>
+          {cargo && <Text style={styles.roleTag}>{tr('Position', 'Cargo')}: {cargo}</Text>}
         </View>
 
         <TouchableOpacity style={styles.menuButton} onPress={() => setMenuVisible(true)}>
           <View style={styles.avatarButton}>
-            <Ionicons name="person-outline" size={18} color="#208AEF" />
+            {profilePhoto
+              ? <Image source={{ uri: profilePhoto }} style={styles.avatarPhoto} />
+              : <Ionicons name="person-outline" size={18} color="#208AEF" />}
           </View>
         </TouchableOpacity>
       </View>
@@ -873,13 +908,13 @@ export default function Dashboard() {
           <View style={styles.dropdown}>
             <TouchableOpacity style={styles.dropdownItem} onPress={handlePerfil}>
               <Ionicons name="person-outline" size={18} color="#1A1D29" />
-              <Text style={styles.dropdownText}>Mi perfil</Text>
+              <Text style={styles.dropdownText}>{tr('My profile', 'Mi perfil')}</Text>
             </TouchableOpacity>
 
             <View style={styles.dropdownDivider} />
             <TouchableOpacity style={styles.dropdownItem} onPress={handlePermisos}>
               <Ionicons name="calendar-outline" size={18} color="#1A1D29" />
-              <Text style={styles.dropdownText}>Mis permisos</Text>
+              <Text style={styles.dropdownText}>{tr('My permissions', 'Mis permisos')}</Text>
             </TouchableOpacity>
 
             {rol === 'SUPER_ADMIN' && (
@@ -887,7 +922,7 @@ export default function Dashboard() {
                 <View style={styles.dropdownDivider} />
                 <TouchableOpacity style={styles.dropdownItem} onPress={handleConfiguracion}>
                   <Ionicons name="settings-outline" size={18} color="#1A1D29" />
-                  <Text style={styles.dropdownText}>Configuración</Text>
+                  <Text style={styles.dropdownText}>{tr('Settings', 'Configuración')}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -896,7 +931,7 @@ export default function Dashboard() {
 
             <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
               <Ionicons name="log-out-outline" size={18} color="#E53935" />
-              <Text style={[styles.dropdownText, styles.logoutText]}>Cerrar sesión</Text>
+              <Text style={[styles.dropdownText, styles.logoutText]}>{tr('Sign out', 'Cerrar sesión')}</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -933,7 +968,7 @@ export default function Dashboard() {
                     disabled={loading}
                     activeOpacity={0.85}
                   >
-                    <Text style={styles.markButtonText}>Registrar mi rostro</Text>
+                    <Text style={styles.markButtonText}>{tr('Register my face', 'Registrar mi rostro')}</Text>
                   </TouchableOpacity>
                 )}
 
@@ -947,8 +982,8 @@ export default function Dashboard() {
                     {loading
                       ? 'Registrando...'
                       : completadoHoy
-                        ? 'Marcación completada hoy'
-                        : `Marcar ${siguienteTipo}`}
+                        ? tr('Attendance completed today', 'Marcación completada hoy')
+                        : siguienteTipo === 'Entrada' ? tr('Clock in', 'Marcar Entrada') : tr('Clock out', 'Marcar Salida')}
                   </Text>
                 </TouchableOpacity>
 
@@ -956,12 +991,12 @@ export default function Dashboard() {
               </View>
 
               <View style={[styles.historySection, { maxWidth: '100%', marginTop: 24 }]}>
-                <Text style={styles.historyTitle}>Historial de hoy</Text>
+                <Text style={styles.historyTitle}>{tr("Today's history", 'Historial de hoy')}</Text>
 
                 {hoyMarcaciones.length === 0 ? (
                   <View style={styles.emptyCard}>
                     <Ionicons name="time-outline" size={22} color="#A0A5B1" />
-                    <Text style={styles.emptyText}>Aún no hay marcaciones registradas hoy</Text>
+                    <Text style={styles.emptyText}>{tr('No attendance records yet today', 'Aún no hay marcaciones registradas hoy')}</Text>
                   </View>
                 ) : (
                   [...hoyMarcaciones].reverse().map((m, index) => (
@@ -986,7 +1021,7 @@ export default function Dashboard() {
             <View style={styles.desktopRightCol}>
               <View style={[styles.statsSection, { marginTop: 0, maxWidth: '100%' }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <Text style={[styles.historyTitle, { marginBottom: 0 }]}>Resumen del Mes</Text>
+                  <Text style={[styles.historyTitle, { marginBottom: 0 }]}>{tr('Monthly Summary', 'Resumen del Mes')}</Text>
                   {Platform.OS === 'web' && historyLogs.length > 0 && (
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       <TouchableOpacity
@@ -1028,19 +1063,19 @@ export default function Dashboard() {
                 <View style={styles.statsRow}>
                   <View style={styles.statCard}>
                     <Ionicons name="time-outline" size={16} color="#208AEF" />
-                    <Text style={styles.statLabel}>Horas del Mes</Text>
+                    <Text style={styles.statLabel}>{tr('Monthly Hours', 'Horas del Mes')}</Text>
                     <Text style={styles.statValue}>{totalHours}h</Text>
                   </View>
 
                   <View style={styles.statCard}>
                     <Ionicons name="calendar-outline" size={16} color="#66BB6A" />
-                    <Text style={styles.statLabel}>Asistencias</Text>
+                    <Text style={styles.statLabel}>{tr('Attendances', 'Asistencias')}</Text>
                     <Text style={[styles.statValue, styles.statValueGood]}>{asistencias}</Text>
                   </View>
 
                   <View style={styles.statCard}>
                     <Ionicons name="warning-outline" size={16} color="#FFA726" />
-                    <Text style={styles.statLabel}>Tardanzas</Text>
+                    <Text style={styles.statLabel}>{tr('Late arrivals', 'Tardanzas')}</Text>
                     <Text style={[styles.statValue, tardanzas > 0 && styles.statValueWarn]}>{tardanzas}</Text>
                   </View>
                 </View>
@@ -1048,7 +1083,7 @@ export default function Dashboard() {
 
               {historyLogs.length > 0 && (
                 <View style={[styles.historySection, { marginTop: 24, maxWidth: '100%' }]}>
-                  <Text style={styles.historyTitle}>Historial Reciente (Últimos días)</Text>
+                  <Text style={styles.historyTitle}>{tr('Recent History (Last days)', 'Historial Reciente (Últimos días)')}</Text>
 
                   {historyLogs.slice(0, 5).map((log: any, idx: number) => {
                     const dateObj = new Date(log.date);
@@ -1104,7 +1139,7 @@ export default function Dashboard() {
           <>
             <View style={styles.statsSection}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <Text style={[styles.historyTitle, { marginBottom: 0 }]}>Resumen del Mes</Text>
+                <Text style={[styles.historyTitle, { marginBottom: 0 }]}>{tr('Monthly Summary', 'Resumen del Mes')}</Text>
                 {Platform.OS === 'web' && historyLogs.length > 0 && (
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <TouchableOpacity
@@ -1146,19 +1181,19 @@ export default function Dashboard() {
               <View style={styles.statsRow}>
                 <View style={styles.statCard}>
                   <Ionicons name="time-outline" size={16} color="#208AEF" />
-                  <Text style={styles.statLabel}>Horas del Mes</Text>
+                  <Text style={styles.statLabel}>{tr('Monthly Hours', 'Horas del Mes')}</Text>
                   <Text style={styles.statValue}>{totalHours}h</Text>
                 </View>
 
                 <View style={styles.statCard}>
                   <Ionicons name="calendar-outline" size={16} color="#66BB6A" />
-                  <Text style={styles.statLabel}>Asistencias</Text>
+                  <Text style={styles.statLabel}>{tr('Attendances', 'Asistencias')}</Text>
                   <Text style={[styles.statValue, styles.statValueGood]}>{asistencias}</Text>
                 </View>
 
                 <View style={styles.statCard}>
                   <Ionicons name="warning-outline" size={16} color="#FFA726" />
-                  <Text style={styles.statLabel}>Tardanzas</Text>
+                  <Text style={styles.statLabel}>{tr('Late arrivals', 'Tardanzas')}</Text>
                   <Text style={[styles.statValue, tardanzas > 0 && styles.statValueWarn]}>{tardanzas}</Text>
                 </View>
               </View>
@@ -1175,7 +1210,7 @@ export default function Dashboard() {
                   disabled={loading}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.markButtonText}>Registrar mi rostro</Text>
+                  <Text style={styles.markButtonText}>{tr('Register my face', 'Registrar mi rostro')}</Text>
                 </TouchableOpacity>
               )}
 
@@ -1189,8 +1224,8 @@ export default function Dashboard() {
                   {loading
                     ? 'Registrando...'
                     : completadoHoy
-                      ? 'Marcación completada hoy'
-                      : `Marcar ${siguienteTipo}`}
+                      ? tr('Attendance completed today', 'Marcación completada hoy')
+                      : siguienteTipo === 'Entrada' ? tr('Clock in', 'Marcar Entrada') : tr('Clock out', 'Marcar Salida')}
                 </Text>
               </TouchableOpacity>
 
@@ -1198,12 +1233,12 @@ export default function Dashboard() {
             </View>
 
             <View style={styles.historySection}>
-              <Text style={styles.historyTitle}>Historial de hoy</Text>
+              <Text style={styles.historyTitle}>{tr("Today's history", 'Historial de hoy')}</Text>
 
               {hoyMarcaciones.length === 0 ? (
                 <View style={styles.emptyCard}>
                   <Ionicons name="time-outline" size={22} color="#A0A5B1" />
-                  <Text style={styles.emptyText}>Aún no hay marcaciones registradas hoy</Text>
+                  <Text style={styles.emptyText}>{tr('No attendance records yet today', 'Aún no hay marcaciones registradas hoy')}</Text>
                 </View>
               ) : (
                 [...hoyMarcaciones].reverse().map((m, index) => (
@@ -1226,7 +1261,7 @@ export default function Dashboard() {
 
             {historyLogs.length > 0 && (
               <View style={[styles.historySection, { marginTop: 24, marginBottom: 20 }]}>
-                <Text style={styles.historyTitle}>Historial Reciente (Últimos días)</Text>
+                <Text style={styles.historyTitle}>{tr('Recent History (Last days)', 'Historial Reciente (Últimos días)')}</Text>
 
                 {historyLogs.slice(0, 5).map((log: any, idx: number) => {
                   const dateObj = new Date(log.date);
@@ -1284,7 +1319,7 @@ export default function Dashboard() {
         <View style={styles.fullHistoryOverlay}>
           <View style={styles.fullHistoryContainer}>
             <View style={styles.fullHistoryHeader}>
-              <Text style={styles.fullHistoryTitle}>Historial Completo del Mes</Text>
+              <Text style={styles.fullHistoryTitle}>{tr('Complete Monthly History', 'Historial Completo del Mes')}</Text>
               <TouchableOpacity
                 onPress={() => setShowFullHistory(false)}
                 style={styles.fullHistoryCloseBtn}
@@ -1349,7 +1384,7 @@ export default function Dashboard() {
               {thisMonthLogs.length === 0 && (
                 <View style={styles.emptyCard}>
                   <Ionicons name="calendar-outline" size={28} color="#A0A5B1" />
-                  <Text style={styles.emptyText}>No hay registros este mes</Text>
+                  <Text style={styles.emptyText}>{tr('No records this month', 'No hay registros este mes')}</Text>
                 </View>
               )}
             </ScrollView>

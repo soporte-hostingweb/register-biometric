@@ -4,11 +4,20 @@ import { useEffect, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch } from '../services/api';
+import { useLanguage } from '../services/language';
 
 const types = [
   ['MEDICAL', 'Cita o atención médica'], ['PERSONAL', 'Asunto personal'],
   ['EMERGENCY', 'Emergencia'], ['WORK_COMMISSION', 'Comisión de trabajo'], ['OTHER', 'Otro motivo'],
 ];
+
+const languageTypeLabel = (value: string, spanish: string, tr: (english: string, spanish: string) => string) => {
+  const english: Record<string, string> = {
+    MEDICAL: 'Medical appointment', PERSONAL: 'Personal matter', EMERGENCY: 'Emergency',
+    WORK_COMMISSION: 'Work assignment', OTHER: 'Other reason',
+  };
+  return tr(english[value] || spanish, spanish);
+};
 
 const webInputStyle: any = {
   width: '100%', boxSizing: 'border-box', backgroundColor: '#071B2D',
@@ -22,6 +31,7 @@ const todayLocal = () => {
 };
 
 export default function PermissionsScreen() {
+  const { tr } = useLanguage();
   const params = useLocalSearchParams();
   const [items, setItems] = useState<any[]>([]);
   const [date, setDate] = useState('');
@@ -69,24 +79,24 @@ export default function PermissionsScreen() {
   const statusLabel: any = { PENDING: 'Pendiente', APPROVED: 'Aprobado', REJECTED: 'Rechazado', CANCELLED: 'Cancelado' };
 
   return <SafeAreaView style={s.page}>
-    <View style={s.header}><TouchableOpacity onPress={() => router.back()} style={s.back}><Ionicons name="arrow-back" size={24} color="#7BC3FF" /></TouchableOpacity><View><Text style={s.eyebrow}>ASISTENCIA</Text><Text style={s.title}>Permisos de salida</Text><Text style={s.subtitle}>{String(params.fullName || '')}</Text></View></View>
+    <View style={s.header}><TouchableOpacity onPress={() => router.back()} style={s.back}><Ionicons name="arrow-back" size={24} color="#7BC3FF" /></TouchableOpacity><View><Text style={s.eyebrow}>{tr('ATTENDANCE', 'ASISTENCIA')}</Text><Text style={s.title}>{tr('Early leave permissions', 'Permisos de salida')}</Text><Text style={s.subtitle}>{String(params.fullName || '')}</Text></View></View>
     <ScrollView contentContainerStyle={s.content}>
       <View style={s.card}>
-        <Text style={s.cardTitle}>Solicitar salida anticipada</Text>
-        <Text style={s.help}>Tu horario regular ya se toma en cuenta. Usa este formulario solo para citas médicas, emergencias u otros permisos excepcionales.</Text>
-        <Text style={s.label}>Fecha</Text>
+        <Text style={s.cardTitle}>{tr('Request early leave', 'Solicitar salida anticipada')}</Text>
+        <Text style={s.help}>{tr('Your regular schedule is already considered. Use this form only for medical appointments, emergencies, or other exceptional permissions.', 'Tu horario regular ya se toma en cuenta. Usa este formulario solo para citas médicas, emergencias u otros permisos excepcionales.')}</Text>
+        <Text style={s.label}>{tr('Date', 'Fecha')}</Text>
         {Platform.OS === 'web' ? <input type="date" value={date} min={todayLocal()} onChange={(event) => setDate(event.currentTarget.value)} style={webInputStyle} /> : <TextInput value={date} onChangeText={setDate} placeholder="AAAA-MM-DD" placeholderTextColor="#6E8297" style={s.input} />}
-        <Text style={s.label}>Hora autorizada de salida</Text>
+        <Text style={s.label}>{tr('Authorized departure time', 'Hora autorizada de salida')}</Text>
         {Platform.OS === 'web' ? <input type="time" value={time} onChange={(event) => setTime(event.currentTarget.value)} style={webInputStyle} /> : <TextInput value={time} onChangeText={setTime} placeholder="HH:mm" placeholderTextColor="#6E8297" style={s.input} />}
-        <Text style={s.label}>Tipo de permiso</Text><View style={s.types}>{types.map(([value,label]) => <TouchableOpacity key={value} onPress={() => { setType(value); setReason(''); setMessage(''); }} style={[s.typeBtn,type===value&&s.typeActive]}><Text style={[s.typeText,type===value&&s.typeTextActive]}>{label}</Text></TouchableOpacity>)}</View>
-        {type === 'OTHER' && <><Text style={s.label}>Especifica el motivo</Text><TextInput value={reason} onChangeText={setReason} multiline placeholder="Explica brevemente el motivo" placeholderTextColor="#6E8297" style={[s.input,s.area]} /></>}
+        <Text style={s.label}>{tr('Permission type', 'Tipo de permiso')}</Text><View style={s.types}>{types.map(([value,label]) => <TouchableOpacity key={value} onPress={() => { setType(value); setReason(''); setMessage(''); }} style={[s.typeBtn,type===value&&s.typeActive]}><Text style={[s.typeText,type===value&&s.typeTextActive]}>{languageTypeLabel(value, label, tr)}</Text></TouchableOpacity>)}</View>
+        {type === 'OTHER' && <><Text style={s.label}>{tr('Specify the reason', 'Especifica el motivo')}</Text><TextInput value={reason} onChangeText={setReason} multiline placeholder={tr('Briefly explain the reason', 'Explica brevemente el motivo')} placeholderTextColor="#6E8297" style={[s.input,s.area]} /></>}
         <TouchableOpacity onPress={pickFile} style={s.file}><Ionicons name="attach" size={20} color="#7BC3FF" /><Text style={s.fileText}>{attachment?.name || 'Adjuntar sustento (opcional, máximo 450 KB)'}</Text></TouchableOpacity>
         {!!message && <Text style={s.message}>{message}</Text>}
-        <TouchableOpacity disabled={saving} onPress={submit} style={[s.submit,saving&&{opacity:.6}]}><Text style={s.submitText}>{saving?'Enviando...':'Enviar a administración'}</Text></TouchableOpacity>
+        <TouchableOpacity disabled={saving} onPress={submit} style={[s.submit,saving&&{opacity:.6}]}><Text style={s.submitText}>{saving ? tr('Sending...', 'Enviando...') : tr('Send to administration', 'Enviar a administración')}</Text></TouchableOpacity>
       </View>
-      <Text style={s.section}>Mis solicitudes</Text>
+      <Text style={s.section}>{tr('My requests', 'Mis solicitudes')}</Text>
       {items.map(item => <View key={item.id} style={s.item}><View style={s.itemTop}><Text style={s.itemDate}>{item.permissionDate} · {item.authorizedExitTime}</Text><Text style={[s.badge,{color:item.status==='APPROVED'?'#4ADE80':item.status==='REJECTED'?'#FB7185':'#FBBF24'}]}>{statusLabel[item.status]||item.status}</Text></View><Text style={s.itemReason}>{item.reason}</Text>{item.reviewComment&&<Text style={s.review}>Administración: {item.reviewComment}</Text>}{item.status==='PENDING'&&<TouchableOpacity onPress={()=>cancel(item.id)}><Text style={s.cancel}>Cancelar solicitud</Text></TouchableOpacity>}</View>)}
-      {!items.length&&<Text style={s.empty}>Aún no tienes solicitudes.</Text>}
+      {!items.length&&<Text style={s.empty}>{tr("You don't have any requests yet.", 'Aún no tienes solicitudes.')}</Text>}
     </ScrollView>
   </SafeAreaView>;
 }

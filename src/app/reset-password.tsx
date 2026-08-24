@@ -3,8 +3,10 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { API_URL } from '../services/api';
+import { useLanguage } from '../services/language';
 
 export default function ResetPasswordScreen() {
+  const { tr } = useLanguage();
   const { token } = useLocalSearchParams<{ token?: string }>();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -44,24 +46,24 @@ export default function ResetPasswordScreen() {
     <View style={styles.page}>
       <View style={styles.card}>
         <View style={styles.icon}><Ionicons name="key-outline" size={31} color="#78C4FF" /></View>
-        <Text style={styles.title}>Crear nueva contraseña</Text>
-        <Text style={styles.subtitle}>Este enlace funciona una sola vez y vence después de 30 minutos.</Text>
+        <Text style={styles.title}>{tr('Create a new password', 'Crear nueva contraseña')}</Text>
+        <Text style={styles.subtitle}>{tr('This link works once and expires after 30 minutes.', 'Este enlace funciona una sola vez y vence después de 30 minutos.')}</Text>
 
         {!success && <>
-          <Text style={styles.label}>Nueva contraseña</Text>
+          <Text style={styles.label}>{tr('New password', 'Nueva contraseña')}</Text>
           <View style={styles.inputBox}>
-            <TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry={!showPassword} placeholder="Mínimo 8 caracteres" placeholderTextColor="#668199" style={styles.input} editable={!loading} />
+            <TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry={!showPassword} placeholder={tr('At least 8 characters', 'Mínimo 8 caracteres')} placeholderTextColor="#668199" style={styles.input} editable={!loading} />
             <TouchableOpacity onPress={() => setShowPassword(value => !value)}><Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={21} color="#8EABC6" /></TouchableOpacity>
           </View>
-          <Text style={styles.label}>Confirmar contraseña</Text>
+          <Text style={styles.label}>{tr('Confirm password', 'Confirmar contraseña')}</Text>
           <View style={styles.inputBox}>
-            <TextInput value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry={!showPassword} placeholder="Repite la contraseña" placeholderTextColor="#668199" style={styles.input} editable={!loading} onSubmitEditing={submit} />
+            <TextInput value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry={!showPassword} placeholder={tr('Repeat the password', 'Repite la contraseña')} placeholderTextColor="#668199" style={styles.input} editable={!loading} onSubmitEditing={submit} />
           </View>
         </>}
 
         {message ? <Text style={[styles.message, success && styles.success]}>{message}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={success ? () => router.replace('/') : submit} disabled={loading}>
-          {loading ? <ActivityIndicator color="#071C35" /> : <Text style={styles.buttonText}>{success ? 'Ir a iniciar sesión' : 'Guardar contraseña'}</Text>}
+          {loading ? <ActivityIndicator color="#071C35" /> : <Text style={styles.buttonText}>{success ? tr('Go to sign in', 'Ir a iniciar sesión') : tr('Save password', 'Guardar contraseña')}</Text>}
         </TouchableOpacity>
       </View>
     </View>

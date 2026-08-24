@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { API_URL, saveAccessToken } from '../services/api';
 import { completeDeviceAuthorization } from '../services/device-auth';
+import { useLanguage } from '../services/language';
 import { styles } from '../styles/login';
 
 type PwaInstallPromptEvent = Event & {
@@ -33,6 +34,7 @@ function isIosBrowser() {
 }
 
 export default function LoginScreen() {
+  const { tr } = useLanguage();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -109,7 +111,7 @@ export default function LoginScreen() {
     };
 
     if (!email || !password) {
-      showAlert('Error', 'Please complete all fields');
+      showAlert('Error', tr('Please complete all fields', 'Completa todos los campos'));
       return;
     }
 
@@ -200,13 +202,13 @@ export default function LoginScreen() {
               </View>
             </View>
 
-            <Text style={styles.title}>Welcome to HWPerú</Text>
-            <Text style={styles.subtitle}>Digital Assistance Platform</Text>
+            <Text style={styles.title}>{tr('Welcome to HWPerú', 'Bienvenido a HWPerú')}</Text>
+            <Text style={styles.subtitle}>{tr('Digital Attendance Platform', 'Plataforma Digital de Asistencia')}</Text>
 
             <View style={styles.divider} />
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Email address</Text>
+              <Text style={styles.label}>{tr('Email address', 'Correo electrónico')}</Text>
               <View
                 nativeID="login-email-field"
                 style={[
@@ -239,7 +241,7 @@ export default function LoginScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Password</Text>
+              <Text style={styles.label}>{tr('Password', 'Contraseña')}</Text>
               <View
                 nativeID="login-password-field"
                 style={[
@@ -256,7 +258,7 @@ export default function LoginScreen() {
                 <TextInput
                   nativeID="login-password-input"
                   style={styles.passwordInput}
-                  placeholder="Enter your password"
+                  placeholder={tr('Enter your password', 'Ingresa tu contraseña')}
                   placeholderTextColor="#D1DBEF"
                   autoComplete="current-password"
                   value={password}
@@ -289,7 +291,7 @@ export default function LoginScreen() {
               disabled={loading}
               activeOpacity={0.8}
             >
-              <Text style={styles.buttonText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
+              <Text style={styles.buttonText}>{loading ? tr('Signing in...', 'Iniciando sesión...') : tr('Sign In', 'Iniciar sesión')}</Text>
             </TouchableOpacity>
 
             {showInstallButton && (
@@ -301,7 +303,7 @@ export default function LoginScreen() {
                 accessibilityLabel="Instalar aplicación HWPerú"
               >
                 <Ionicons name="download-outline" size={19} color="#D9ECFF" />
-                <Text style={styles.installButtonText}>Instalar aplicación</Text>
+                <Text style={styles.installButtonText}>{tr('Install application', 'Instalar aplicación')}</Text>
               </TouchableOpacity>
             )}
 

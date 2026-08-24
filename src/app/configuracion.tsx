@@ -16,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import { apiFetch } from '../services/api';
+import { useLanguage } from '../services/language';
 
 type AuthorizedDeviceUser = {
   userId: number;
@@ -58,6 +59,7 @@ const formatDate = (value?: string | null) => {
 };
 
 export default function ConfiguracionScreen() {
+  const { tr } = useLanguage();
   const { fullName, email, rol } = useLocalSearchParams<{ fullName: string; email: string; rol: string }>();
   const { width } = useWindowDimensions();
   const isMobile = width <= 600;
@@ -257,9 +259,9 @@ export default function ConfiguracionScreen() {
           <Ionicons name="arrow-back" size={21} color="#DCEBFA" />
         </TouchableOpacity>
         <View style={styles.headerText}>
-          <Text style={styles.eyebrow}>SUPER ADMINISTRACIÓN</Text>
-          <Text style={[styles.title, isMobile && styles.titleMobile]}>Configuración</Text>
-          <Text style={styles.subtitle}>Administra las computadoras autorizadas de los trabajadores.</Text>
+          <Text style={styles.eyebrow}>{tr('SUPER ADMINISTRATION', 'SUPER ADMINISTRACIÓN')}</Text>
+          <Text style={[styles.title, isMobile && styles.titleMobile]}>{tr('Settings', 'Configuración')}</Text>
+          <Text style={styles.subtitle}>{tr('Manage employee authorized devices and facial evidence.', 'Administra los dispositivos autorizados y evidencias faciales de los trabajadores.')}</Text>
         </View>
       </View>
 
@@ -270,7 +272,7 @@ export default function ConfiguracionScreen() {
             onPress={() => setActiveTab('devices')}
           >
             <Ionicons name="desktop-outline" size={18} color={activeTab === 'devices' ? '#071C35' : '#9AB1C7'} />
-            <Text numberOfLines={1} style={[styles.tabText, isMobile && styles.tabTextMobile, activeTab === 'devices' && styles.activeTabText]}>{isMobile ? 'Dispositivos' : 'Dispositivos autorizados'}</Text>
+            <Text numberOfLines={1} style={[styles.tabText, isMobile && styles.tabTextMobile, activeTab === 'devices' && styles.activeTabText]}>{isMobile ? tr('Devices', 'Dispositivos') : tr('Authorized devices', 'Dispositivos autorizados')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, isMobile && styles.tabMobile, activeTab === 'evidence' && styles.activeTab]}
@@ -280,7 +282,7 @@ export default function ConfiguracionScreen() {
             }}
           >
             <Ionicons name="images-outline" size={18} color={activeTab === 'evidence' ? '#071C35' : '#9AB1C7'} />
-            <Text numberOfLines={1} style={[styles.tabText, isMobile && styles.tabTextMobile, activeTab === 'evidence' && styles.activeTabText]}>{isMobile ? 'Evidencias' : 'Evidencias faciales'}</Text>
+            <Text numberOfLines={1} style={[styles.tabText, isMobile && styles.tabTextMobile, activeTab === 'evidence' && styles.activeTabText]}>{isMobile ? tr('Evidence', 'Evidencias') : tr('Facial evidence', 'Evidencias faciales')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -292,14 +294,14 @@ export default function ConfiguracionScreen() {
                 <TextInput
                   value={search}
                   onChangeText={setSearch}
-                  placeholder="Buscar empleado o correo"
+                  placeholder={tr('Search employee or email', 'Buscar empleado o correo')}
                   placeholderTextColor="#70859B"
                   style={styles.searchInput}
                 />
               </View>
               <TouchableOpacity style={styles.refreshButton} onPress={loadDevices} disabled={loading}>
                 <Ionicons name="refresh-outline" size={19} color="#071C35" />
-                <Text style={styles.refreshText}>Actualizar</Text>
+                <Text style={styles.refreshText}>{tr('Refresh', 'Actualizar')}</Text>
               </TouchableOpacity>
             </View>
 
@@ -309,12 +311,12 @@ export default function ConfiguracionScreen() {
             {loading ? (
               <View style={styles.loadingBox}>
                 <ActivityIndicator color="#65B9FF" size="large" />
-                <Text style={styles.loadingText}>Cargando dispositivos…</Text>
+                <Text style={styles.loadingText}>{tr('Loading devices…', 'Cargando dispositivos…')}</Text>
               </View>
             ) : filteredUsers.length === 0 ? (
               <View style={styles.emptyBox}>
                 <Ionicons name="laptop-outline" size={42} color="#58748F" />
-                <Text style={styles.emptyTitle}>No se encontraron usuarios</Text>
+                <Text style={styles.emptyTitle}>{tr('No users found', 'No se encontraron usuarios')}</Text>
               </View>
             ) : (
               <View style={styles.grid}>
@@ -410,14 +412,14 @@ export default function ConfiguracionScreen() {
                   value={search}
                   onChangeText={setSearch}
                   onSubmitEditing={loadEvidence}
-                  placeholder="Buscar empleado o correo"
+                  placeholder={tr('Search employee or email', 'Buscar empleado o correo')}
                   placeholderTextColor="#70859B"
                   style={styles.searchInput}
                 />
               </View>
               <TouchableOpacity style={styles.refreshButton} onPress={loadEvidence} disabled={evidenceLoading}>
                 <Ionicons name="search-outline" size={19} color="#071C35" />
-                <Text style={styles.refreshText}>Buscar</Text>
+                <Text style={styles.refreshText}>{tr('Search', 'Buscar')}</Text>
               </TouchableOpacity>
             </View>
 
@@ -426,7 +428,7 @@ export default function ConfiguracionScreen() {
             {evidenceLoading ? (
               <View style={styles.loadingBox}>
                 <ActivityIndicator color="#65B9FF" size="large" />
-                <Text style={styles.loadingText}>Cargando evidencias…</Text>
+                <Text style={styles.loadingText}>{tr('Loading evidence…', 'Cargando evidencias…')}</Text>
               </View>
             ) : groupedEvidence.length === 0 ? (
               <View style={styles.emptyBox}>
@@ -461,7 +463,7 @@ export default function ConfiguracionScreen() {
                         </View>
                         <TouchableOpacity style={[styles.photoButton, isMobile && styles.photoButtonMobile]} onPress={() => openPhoto(item)}>
                           <Ionicons name="eye-outline" size={19} color="#071C35" />
-                          <Text style={styles.photoButtonText}>Ver fotografía</Text>
+                          <Text style={styles.photoButtonText}>{tr('View photo', 'Ver fotografía')}</Text>
                         </TouchableOpacity>
                       </View>
                     ))}</View>
