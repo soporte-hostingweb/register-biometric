@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch, logoutFromApi } from '../services/api';
+import { getWebPushPermission, subscribeToWebPush, supportsWebPush } from '../services/web-push';
 import AttendanceCamera from '../components/AttendanceCamera';
 import type { EnrollmentCapture } from '../components/AttendanceCamera.web';
 import { styles } from '../styles/dashboard';
@@ -131,6 +132,9 @@ export default function Dashboard() {
   const [cameraVisible, setCameraVisible] = useState(false);
   const [cameraPurpose, setCameraPurpose] = useState<'attendance' | 'enrollment'>('attendance');
   const [faceEnrolled, setFaceEnrolled] = useState<boolean | null>(null);
+  const [showPushPrompt, setShowPushPrompt] = useState(false);
+  const [pushActivating, setPushActivating] = useState(false);
+  const [pushMessage, setPushMessage] = useState('');
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width > 768;
   const { fullName, rol, email } = useLocalSearchParams<{ fullName: string; rol: string; email: string }>();
@@ -154,6 +158,34 @@ export default function Dashboard() {
       router.replace('/');
     }
   }, [email]);
+
+  useEffect(() => {
+    if (!email || Platform.OS !== 'web') return;
+    const prepareWebPush = async () => {
+      if (!supportsWebPush()) return;
+      const permission = await getWebPushPermission();
+      if (permission === 'granted') {
+        subscribeToWebPush().catch((error) => console.log('No se pudo renovar la suscripción push:', error));
+      } else if (permission === 'default') {
+        setShowPushPrompt(true);
+      }
+    };
+    prepareWebPush();
+  }, [email]);
+
+  const activateAttendanceNotifications = async () => {
+    setPushActivating(true);
+    setPushMessage('');
+    try {
+      await subscribeToWebPush();
+      setPushMessage('Notificaciones de asistencia activadas correctamente.');
+      setTimeout(() => setShowPushPrompt(false), 1200);
+    } catch (error: any) {
+      setPushMessage(error?.message || 'No se pudieron activar las notificaciones.');
+    } finally {
+      setPushActivating(false);
+    }
+  };
 
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -868,6 +900,21 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
         </Pressable>
+      </Modal>
+
+      <Modal visible={showPushPrompt} transparent animationType="fade">
+        <View style={styles.pushPermissionOverlay}>
+          <View style={styles.pushPermissionCard}>
+            <View style={styles.pushPermissionIcon}><Ionicons name="notifications" size={30} color="#72C1FF" /></View>
+            <Text style={styles.pushPermissionTitle}>Activa tus alertas de asistencia</Text>
+            <Text style={styles.pushPermissionText}>Recibirás una notificación en este dispositivo cuando terminen tus 10 minutos de tolerancia, aunque la aplicación esté cerrada.</Text>
+            {!!pushMessage && <Text style={styles.pushPermissionMessage}>{pushMessage}</Text>}
+            <TouchableOpacity style={styles.pushPermissionButton} onPress={activateAttendanceNotifications} disabled={pushActivating}>
+              <Text style={styles.pushPermissionButtonText}>{pushActivating ? 'Activando...' : 'Permitir notificaciones'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowPushPrompt(false)} style={styles.pushPermissionLater}><Text style={styles.pushPermissionLaterText}>Ahora no</Text></TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       <ScrollView contentContainerStyle={[styles.content, isDesktop && styles.desktopContent]}>
