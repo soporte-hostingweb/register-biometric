@@ -498,6 +498,11 @@ export default function Dashboard() {
     });
   };
 
+  const handlePermisos = () => {
+    setMenuVisible(false);
+    router.push({ pathname: '/permisos' as any, params: { fullName, rol, email } });
+  };
+
   const fecha = currentTime.toLocaleDateString('es-PE', {
     weekday: 'long',
     day: 'numeric',
@@ -837,6 +842,12 @@ export default function Dashboard() {
             <TouchableOpacity style={styles.dropdownItem} onPress={handlePerfil}>
               <Ionicons name="person-outline" size={18} color="#1A1D29" />
               <Text style={styles.dropdownText}>Mi perfil</Text>
+            </TouchableOpacity>
+
+            <View style={styles.dropdownDivider} />
+            <TouchableOpacity style={styles.dropdownItem} onPress={handlePermisos}>
+              <Ionicons name="calendar-outline" size={18} color="#1A1D29" />
+              <Text style={styles.dropdownText}>Mis permisos</Text>
             </TouchableOpacity>
 
             {rol === 'SUPER_ADMIN' && (
