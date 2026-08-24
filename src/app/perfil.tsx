@@ -26,6 +26,7 @@ export default function PerfilScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [photoSaving, setPhotoSaving] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -47,8 +48,22 @@ export default function PerfilScreen() {
     const loadSavedPhoto = async () => {
       if (!email) return;
       try {
+        const response = await apiFetch(`/api/auth/profile/photo?t=${Date.now()}`);
+        if (response.ok) {
+          const blob = await response.blob();
+          const persistentUri = Platform.OS === 'web'
+            ? URL.createObjectURL(blob)
+            : await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result));
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+          setImageUri(persistentUri);
+          return;
+        }
         const saved = await AsyncStorage.getItem(`@profile_photo_${email.trim().toLowerCase()}`);
-        if (saved) {
+        if (saved?.startsWith('data:image/')) {
           setImageUri(saved);
         }
       } catch (err) {
@@ -97,18 +112,28 @@ export default function PerfilScreen() {
         mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
+        quality: 0.55,
+        base64: true,
       });
 
-      if (!result.canceled && result.assets && result.assets[0].uri) {
-        const selectedUri = result.assets[0].uri;
-        setImageUri(selectedUri);
-        if (email) {
-          await AsyncStorage.setItem(`@profile_photo_${email.trim().toLowerCase()}`, selectedUri);
-        }
+      if (!result.canceled && result.assets?.[0]?.base64) {
+        setPhotoSaving(true);
+        const asset = result.assets[0];
+        const mimeType = asset.mimeType && ['image/jpeg', 'image/png', 'image/webp'].includes(asset.mimeType)
+          ? asset.mimeType : 'image/jpeg';
+        const photoData = `data:${mimeType};base64,${asset.base64}`;
+        const response = await apiFetch('/api/auth/profile/photo', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ photoData }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || 'No se pudo guardar la foto.');
+        setImageUri(photoData);
+        if (email) await AsyncStorage.setItem(`@profile_photo_${email.trim().toLowerCase()}`, photoData);
       }
-    } catch (err) {
-      console.log('Error seleccionando imagen:', err);
+    } catch (err: any) {
+      alert(err?.message || 'No se pudo guardar la foto de perfil.');
+    } finally {
+      setPhotoSaving(false);
     }
   };
 
@@ -314,14 +339,14 @@ export default function PerfilScreen() {
 
           {/* Foto de Perfil (Avatar Superpuesto) */}
           <View style={styles.desktopAvatarWrapper}>
-            <TouchableOpacity style={styles.desktopAvatar} onPress={handlePickImage} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.desktopAvatar} onPress={handlePickImage} activeOpacity={0.8} disabled={photoSaving}>
               {imageUri ? (
                 <Image source={{ uri: imageUri }} style={styles.avatarImage} />
               ) : (
                 <Image source={require('../../assets/images/icon.png')} style={[styles.avatarImage, { resizeMode: 'contain' }]} />
               )}
               <View style={styles.cameraBadge}>
-                <Ionicons name="camera" size={16} color="#FFFFFF" />
+                {photoSaving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="camera" size={16} color="#FFFFFF" />}
               </View>
             </TouchableOpacity>
           </View>
@@ -386,14 +411,14 @@ export default function PerfilScreen() {
           </View>
 
           <View style={styles.avatarWrapper}>
-            <TouchableOpacity style={styles.avatar} onPress={handlePickImage} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.avatar} onPress={handlePickImage} activeOpacity={0.8} disabled={photoSaving}>
               {imageUri ? (
                 <Image source={{ uri: imageUri }} style={styles.avatarImage} />
               ) : (
                 <Image source={require('../../assets/images/icon.png')} style={[styles.avatarImage, { resizeMode: 'contain' }]} />
               )}
               <View style={styles.cameraBadge}>
-                <Ionicons name="camera" size={14} color="#FFFFFF" />
+                {photoSaving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="camera" size={14} color="#FFFFFF" />}
               </View>
             </TouchableOpacity>
           </View>
