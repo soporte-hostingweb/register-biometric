@@ -10,6 +10,17 @@ const types = [
   ['EMERGENCY', 'Emergencia'], ['WORK_COMMISSION', 'Comisión de trabajo'], ['OTHER', 'Otro motivo'],
 ];
 
+const webInputStyle: any = {
+  width: '100%', boxSizing: 'border-box', backgroundColor: '#071B2D',
+  border: '1px solid #315572', borderRadius: 11, padding: 13,
+  color: '#FFFFFF', colorScheme: 'dark', fontSize: 16, fontFamily: 'inherit',
+};
+
+const todayLocal = () => {
+  const value = new Date();
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+};
+
 export default function PermissionsScreen() {
   const params = useLocalSearchParams();
   const [items, setItems] = useState<any[]>([]);
@@ -42,9 +53,13 @@ export default function PermissionsScreen() {
   };
 
   const submit = async () => {
+    const selectedTypeLabel = types.find(([value]) => value === type)?.[1] || 'Permiso de salida';
+    const requestReason = type === 'OTHER' ? reason.trim() : selectedTypeLabel;
+    if (!date || !time) { setMessage('Selecciona la fecha y la hora autorizada de salida.'); return; }
+    if (type === 'OTHER' && requestReason.length < 5) { setMessage('Escribe el motivo del permiso.'); return; }
     setSaving(true); setMessage('');
     try {
-      const res = await apiFetch('/api/attendance/permissions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permissionDate: date, authorizedExitTime: time, permissionType: type, reason, attachment }) });
+      const res = await apiFetch('/api/attendance/permissions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permissionDate: date, authorizedExitTime: time, permissionType: type, reason: requestReason, attachment }) });
       const data = await res.json(); setMessage(data.message || (res.ok ? 'Solicitud enviada.' : 'No se pudo enviar.'));
       if (res.ok) { setDate(''); setTime(''); setReason(''); setAttachment(null); await load(); }
     } finally { setSaving(false); }
@@ -59,10 +74,12 @@ export default function PermissionsScreen() {
       <View style={s.card}>
         <Text style={s.cardTitle}>Solicitar salida anticipada</Text>
         <Text style={s.help}>Tu horario regular ya se toma en cuenta. Usa este formulario solo para citas médicas, emergencias u otros permisos excepcionales.</Text>
-        <Text style={s.label}>Fecha (AAAA-MM-DD)</Text><TextInput value={date} onChangeText={setDate} placeholder="2026-08-25" placeholderTextColor="#6E8297" style={s.input} />
-        <Text style={s.label}>Hora autorizada de salida (HH:mm)</Text><TextInput value={time} onChangeText={setTime} placeholder="16:00" placeholderTextColor="#6E8297" style={s.input} />
-        <Text style={s.label}>Tipo de permiso</Text><View style={s.types}>{types.map(([value,label]) => <TouchableOpacity key={value} onPress={() => setType(value)} style={[s.typeBtn,type===value&&s.typeActive]}><Text style={[s.typeText,type===value&&s.typeTextActive]}>{label}</Text></TouchableOpacity>)}</View>
-        <Text style={s.label}>Motivo</Text><TextInput value={reason} onChangeText={setReason} multiline placeholder="Explica brevemente el motivo" placeholderTextColor="#6E8297" style={[s.input,s.area]} />
+        <Text style={s.label}>Fecha</Text>
+        {Platform.OS === 'web' ? <input type="date" value={date} min={todayLocal()} onChange={(event) => setDate(event.currentTarget.value)} style={webInputStyle} /> : <TextInput value={date} onChangeText={setDate} placeholder="AAAA-MM-DD" placeholderTextColor="#6E8297" style={s.input} />}
+        <Text style={s.label}>Hora autorizada de salida</Text>
+        {Platform.OS === 'web' ? <input type="time" value={time} onChange={(event) => setTime(event.currentTarget.value)} style={webInputStyle} /> : <TextInput value={time} onChangeText={setTime} placeholder="HH:mm" placeholderTextColor="#6E8297" style={s.input} />}
+        <Text style={s.label}>Tipo de permiso</Text><View style={s.types}>{types.map(([value,label]) => <TouchableOpacity key={value} onPress={() => { setType(value); setReason(''); setMessage(''); }} style={[s.typeBtn,type===value&&s.typeActive]}><Text style={[s.typeText,type===value&&s.typeTextActive]}>{label}</Text></TouchableOpacity>)}</View>
+        {type === 'OTHER' && <><Text style={s.label}>Especifica el motivo</Text><TextInput value={reason} onChangeText={setReason} multiline placeholder="Explica brevemente el motivo" placeholderTextColor="#6E8297" style={[s.input,s.area]} /></>}
         <TouchableOpacity onPress={pickFile} style={s.file}><Ionicons name="attach" size={20} color="#7BC3FF" /><Text style={s.fileText}>{attachment?.name || 'Adjuntar sustento (opcional, máximo 450 KB)'}</Text></TouchableOpacity>
         {!!message && <Text style={s.message}>{message}</Text>}
         <TouchableOpacity disabled={saving} onPress={submit} style={[s.submit,saving&&{opacity:.6}]}><Text style={s.submitText}>{saving?'Enviando...':'Enviar a administración'}</Text></TouchableOpacity>
