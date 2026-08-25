@@ -350,17 +350,7 @@ export default function PerfilScreen() {
   );
 
   return (
-    <View style={[styles.container, isDesktop ? { paddingTop: 70 } : styles.mobileContainer]}>
-      {isDesktop && (
-        <View style={styles.desktopNavbar}>
-          <TouchableOpacity style={styles.desktopNavBack} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={18} color="#5CADFF" />
-            <Text style={styles.desktopNavBackText}>Volver al Dashboard</Text>
-          </TouchableOpacity>
-          <Text style={styles.desktopNavTitle}>{tr('Employee Profile', 'Perfil de Colaborador')}</Text>
-          <Image source={require('../../assets/images/hwperu-official-icon.png')} style={styles.desktopNavLogo} />
-        </View>
-      )}
+    <View style={[styles.container, isDesktop ? styles.desktopContainer : styles.mobileContainer]}>
 
       {isDesktop ? (
         <View style={styles.desktopProfileCard}>
@@ -527,6 +517,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
     justifyContent: 'center',
+  },
+  desktopContainer: {
+    justifyContent: 'flex-start',
+    overflow: 'scroll',
   },
   mobileContainer: {
     justifyContent: 'flex-start',
