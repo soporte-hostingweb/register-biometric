@@ -198,7 +198,7 @@ export default function LoginScreen() {
           <View style={styles.card}>
             <View style={styles.hero}>
               <View style={styles.heroImageWrap}>
-                <Image source={require('../../assets/images/icon.png')} style={styles.heroImage} />
+                <Image source={require('../../assets/images/hwperu-brand-v2.png')} style={styles.heroImage} />
               </View>
             </View>
 

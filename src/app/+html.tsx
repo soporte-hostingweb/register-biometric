@@ -15,9 +15,9 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="apple-mobile-web-app-title" content="HWPerú - Asistencia" />
         <meta name="description" content="Plataforma digital de asistencia HWPerú" />
         <link rel="manifest" href="/manifest.webmanifest" />
-        <link rel="icon" type="image/png" sizes="192x192" href="/icons/pwa-icon-192.png?v=2" />
-        <link rel="shortcut icon" type="image/png" href="/icons/pwa-icon-192.png?v=2" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icons/pwa-icon-v2-192.png?v=3" />
+        <link rel="shortcut icon" type="image/png" href="/icons/pwa-icon-v2-192.png?v=3" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-v2.png?v=3" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -52,6 +52,42 @@ export default function Root({ children }: PropsWithChildren) {
                 width: 100%;
                 min-height: 100%;
                 background: #051C33;
+              }
+
+              #hwperu-boot-splash {
+                position: fixed;
+                inset: 0;
+                z-index: 2147483647;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #06164F;
+                animation: hwperuSplashOut 0.42s ease 1.15s forwards;
+                pointer-events: none;
+              }
+
+              #hwperu-boot-splash img {
+                width: min(42vw, 210px);
+                height: min(42vw, 210px);
+                object-fit: contain;
+                border-radius: 26%;
+                animation: hwperuLogoIn 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+              }
+
+              @keyframes hwperuLogoIn {
+                from { opacity: 0; transform: scale(0.78); }
+                to { opacity: 1; transform: scale(1); }
+              }
+
+              @keyframes hwperuSplashOut {
+                to { opacity: 0; visibility: hidden; }
+              }
+
+              @media (prefers-reduced-motion: reduce) {
+                #hwperu-boot-splash,
+                #hwperu-boot-splash img {
+                  animation-duration: 0.01ms;
+                }
               }
 
               #login-email-input,
@@ -114,7 +150,12 @@ export default function Root({ children }: PropsWithChildren) {
         />
         <ScrollViewStyleReset />
       </head>
-      <body>{children}</body>
+      <body>
+        <div id="hwperu-boot-splash" aria-hidden="true">
+          <img src="/icons/pwa-icon-v2-512.png" alt="" />
+        </div>
+        {children}
+      </body>
     </html>
   );
 }

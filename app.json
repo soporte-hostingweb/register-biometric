@@ -4,7 +4,7 @@
     "slug": "jose-benites",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/hwperu-brand-v2.png",
     "scheme": "asistenciaapp",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -13,10 +13,8 @@
     "android": {
       "package": "com.hwperu.asistencia",
       "adaptiveIcon": {
-        "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#06164F",
+        "foregroundImage": "./assets/images/hwperu-brand-v2.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -26,16 +24,16 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/hwperu-pwa-icon.png"
+      "favicon": "./assets/images/hwperu-favicon-v2.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#FFFFFF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 180
+          "backgroundColor": "#06164F",
+          "image": "./assets/images/hwperu-brand-v2.png",
+          "imageWidth": 190
         }
       ],
       [
