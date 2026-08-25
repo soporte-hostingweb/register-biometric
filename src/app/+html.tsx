@@ -15,9 +15,9 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="apple-mobile-web-app-title" content="HWPerú - Asistencia" />
         <meta name="description" content="Plataforma digital de asistencia HWPerú" />
         <link rel="manifest" href="/manifest.webmanifest" />
-        <link rel="icon" type="image/png" sizes="192x192" href="/icons/pwa-icon-v2-192.png?v=3" />
-        <link rel="shortcut icon" type="image/png" href="/icons/pwa-icon-v2-192.png?v=3" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-v2.png?v=3" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icons/pwa-icon-v3-192.png?v=4" />
+        <link rel="shortcut icon" type="image/png" href="/icons/pwa-icon-v3-192.png?v=4" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-v3.png?v=4" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -61,16 +61,15 @@ export default function Root({ children }: PropsWithChildren) {
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                background: #06164F;
+                background: #FFFFFF;
                 animation: hwperuSplashOut 0.42s ease 1.15s forwards;
                 pointer-events: none;
               }
 
               #hwperu-boot-splash img {
-                width: min(42vw, 210px);
-                height: min(42vw, 210px);
+                width: min(78vw, 460px);
+                height: auto;
                 object-fit: contain;
-                border-radius: 26%;
                 animation: hwperuLogoIn 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
               }
 
@@ -152,7 +151,7 @@ export default function Root({ children }: PropsWithChildren) {
       </head>
       <body>
         <div id="hwperu-boot-splash" aria-hidden="true">
-          <img src="/icons/pwa-icon-v2-512.png" alt="" />
+          <img src="/icons/hwperu-official-logo.png" alt="" />
         </div>
         {children}
       </body>

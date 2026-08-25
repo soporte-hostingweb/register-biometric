@@ -358,7 +358,7 @@ export default function PerfilScreen() {
             <Text style={styles.desktopNavBackText}>Volver al Dashboard</Text>
           </TouchableOpacity>
           <Text style={styles.desktopNavTitle}>{tr('Employee Profile', 'Perfil de Colaborador')}</Text>
-          <Image source={require('../../assets/images/hwperu-brand-v2.png')} style={styles.desktopNavLogo} />
+          <Image source={require('../../assets/images/hwperu-official-icon.png')} style={styles.desktopNavLogo} />
         </View>
       )}
 
@@ -373,7 +373,7 @@ export default function PerfilScreen() {
               {imageUri ? (
                 <Image source={{ uri: imageUri }} style={styles.avatarImage} />
               ) : (
-                <Image source={require('../../assets/images/hwperu-brand-v2.png')} style={[styles.avatarImage, { resizeMode: 'contain' }]} />
+                <Image source={require('../../assets/images/hwperu-official-icon.png')} style={[styles.avatarImage, { resizeMode: 'contain' }]} />
               )}
               <View style={styles.cameraBadge}>
                 {photoSaving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="camera" size={16} color="#FFFFFF" />}
@@ -446,7 +446,7 @@ export default function PerfilScreen() {
               {imageUri ? (
                 <Image source={{ uri: imageUri }} style={styles.avatarImage} />
               ) : (
-                <Image source={require('../../assets/images/hwperu-brand-v2.png')} style={[styles.avatarImage, { resizeMode: 'contain' }]} />
+                <Image source={require('../../assets/images/hwperu-official-icon.png')} style={[styles.avatarImage, { resizeMode: 'contain' }]} />
               )}
               <View style={styles.cameraBadge}>
                 {photoSaving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="camera" size={14} color="#FFFFFF" />}
