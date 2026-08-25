@@ -4,7 +4,6 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LogBox, Platform, View } from 'react-native';
 import { LanguageProvider } from '../services/language';
-import DesktopAppNavigation from '../components/desktop-app-navigation';
 
 LogBox.ignoreLogs([
   'expo-notifications: Android Push notifications',
@@ -28,10 +27,7 @@ export default function RootLayout() {
   return (
     <LanguageProvider>
       <StatusBar style="dark" />
-      <View style={{ flex: 1 }}>
-        <DesktopAppNavigation />
-        <Stack screenOptions={{ headerShown: false }} />
-      </View>
+      <Stack screenOptions={{ headerShown: false }} />
     </LanguageProvider>
   );
 }
