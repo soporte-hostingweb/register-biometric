@@ -36,9 +36,15 @@ export default function PerfilScreen() {
   const [passwordError, setPasswordError] = useState('');
   const [passwordNoticeVisible, setPasswordNoticeVisible] = useState(false);
   const [dontShowPasswordNotice, setDontShowPasswordNotice] = useState(false);
+  const [desktopMenuVisible, setDesktopMenuVisible] = useState(false);
   
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width > 768;
+
+  const openSection = (pathname: '/dashboard' | '/perfil' | '/permisos' | '/configuracion') => {
+    setDesktopMenuVisible(false);
+    router.push({ pathname: pathname as any, params: { fullName, rol, email } });
+  };
 
   useEffect(() => {
     if (!email) {
@@ -351,6 +357,51 @@ export default function PerfilScreen() {
 
   return (
     <View style={[styles.container, isDesktop ? styles.desktopContainer : styles.mobileContainer]}>
+      {isDesktop && (
+        <>
+          <TouchableOpacity
+            accessibilityLabel={tr('Back to Dashboard', 'Volver al Dashboard')}
+            style={[styles.desktopFloatingControl, styles.desktopBackControl]}
+            onPress={() => openSection('/dashboard')}
+          >
+            <Ionicons name="arrow-back" size={23} color="#72C1FF" />
+            <Text style={styles.desktopBackText}>{tr('Dashboard', 'Panel principal')}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            accessibilityLabel={tr('Open account menu', 'Abrir menú de cuenta')}
+            style={[styles.desktopFloatingControl, styles.desktopProfileControl]}
+            onPress={() => setDesktopMenuVisible((visible) => !visible)}
+          >
+            {imageUri ? (
+              <Image source={{ uri: imageUri }} style={styles.desktopControlAvatar} />
+            ) : (
+              <View style={styles.desktopControlAvatarFallback}>
+                <Ionicons name="person-outline" size={21} color="#72C1FF" />
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {desktopMenuVisible && (
+            <View style={styles.desktopAccountMenu}>
+              <TouchableOpacity style={styles.desktopAccountItem} onPress={() => setDesktopMenuVisible(false)}>
+                <Ionicons name="person-outline" size={19} color="#72C1FF" />
+                <Text style={styles.desktopAccountItemText}>{tr('My profile', 'Mi perfil')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.desktopAccountItem} onPress={() => openSection('/permisos')}>
+                <Ionicons name="calendar-outline" size={19} color="#72C1FF" />
+                <Text style={styles.desktopAccountItemText}>{tr('My permissions', 'Mis permisos')}</Text>
+              </TouchableOpacity>
+              {rol === 'SUPER_ADMIN' && (
+                <TouchableOpacity style={styles.desktopAccountItem} onPress={() => openSection('/configuracion')}>
+                  <Ionicons name="settings-outline" size={19} color="#72C1FF" />
+                  <Text style={styles.desktopAccountItemText}>{tr('Settings', 'Configuración')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </>
+      )}
 
       {isDesktop ? (
         <View style={styles.desktopProfileCard}>
@@ -522,6 +573,46 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     overflow: 'scroll',
   },
+  desktopFloatingControl: {
+    position: 'absolute',
+    top: 22,
+    zIndex: 30,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#274B67',
+    backgroundColor: '#0D263B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  desktopBackControl: {
+    left: 28,
+    flexDirection: 'row',
+    gap: 9,
+    paddingHorizontal: 17,
+  },
+  desktopBackText: { color: '#DCEBFA', fontWeight: '800', fontSize: 13 },
+  desktopProfileControl: { right: 28, width: 48, overflow: 'hidden' },
+  desktopControlAvatar: { width: 46, height: 46, borderRadius: 23 },
+  desktopControlAvatarFallback: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: '#153A58' },
+  desktopAccountMenu: {
+    position: 'absolute',
+    top: 78,
+    right: 28,
+    zIndex: 40,
+    width: 220,
+    padding: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#274B67',
+    backgroundColor: '#0D263B',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+  },
+  desktopAccountItem: { minHeight: 44, paddingHorizontal: 12, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  desktopAccountItemText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
   mobileContainer: {
     justifyContent: 'flex-start',
     minHeight: '100vh',
