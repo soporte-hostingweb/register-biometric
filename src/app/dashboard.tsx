@@ -4,7 +4,7 @@ import * as Device from 'expo-device';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, Modal, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch, logoutFromApi } from '../services/api';
@@ -140,6 +140,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 72, right: 20 });
+  const menuButtonRef = useRef<View>(null);
   const [cargo, setCargo] = useState<string | null>(null);
   const [historyLogs, setHistoryLogs] = useState<any[]>([]);
   const [showFullHistory, setShowFullHistory] = useState(false);
@@ -152,6 +154,17 @@ export default function Dashboard() {
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width > 768;
+
+  const toggleProfileMenu = () => {
+    if (menuVisible) {
+      setMenuVisible(false);
+      return;
+    }
+    menuButtonRef.current?.measureInWindow((x, y, buttonWidth, buttonHeight) => {
+      setMenuPosition({ top: y + buttonHeight + 8, right: Math.max(12, width - x - buttonWidth) });
+      setMenuVisible(true);
+    });
+  };
   const { fullName, rol, email } = useLocalSearchParams<{ fullName: string; rol: string; email: string }>();
 
   useFocusEffect(useCallback(() => {
@@ -914,16 +927,17 @@ export default function Dashboard() {
         </View>
 
         <View style={styles.menuArea}>
-          <TouchableOpacity style={styles.menuButton} onPress={() => setMenuVisible((visible) => !visible)}>
-            <View style={styles.avatarButton}>
+          <TouchableOpacity style={styles.menuButton} onPress={toggleProfileMenu}>
+            <View ref={menuButtonRef} collapsable={false} style={styles.avatarButton}>
               {profilePhoto
                 ? <Image source={{ uri: profilePhoto }} style={styles.avatarPhoto} />
                 : <Ionicons name="person-outline" size={18} color="#208AEF" />}
             </View>
           </TouchableOpacity>
 
-          {menuVisible && (
-          <View style={styles.dropdown}>
+          <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
+            <Pressable style={styles.overlay} onPress={() => setMenuVisible(false)}>
+              <Pressable style={[styles.dropdown, menuPosition]} onPress={(event) => event.stopPropagation()}>
             <TouchableOpacity style={styles.dropdownItem} onPress={handlePerfil}>
               <Ionicons name="person-outline" size={18} color="#1A1D29" />
               <Text style={styles.dropdownText}>{tr('My profile', 'Mi perfil')}</Text>
@@ -951,8 +965,9 @@ export default function Dashboard() {
               <Ionicons name="log-out-outline" size={18} color="#E53935" />
               <Text style={[styles.dropdownText, styles.logoutText]}>{tr('Sign out', 'Cerrar sesión')}</Text>
             </TouchableOpacity>
-          </View>
-          )}
+              </Pressable>
+            </Pressable>
+          </Modal>
         </View>
       </View>
 
