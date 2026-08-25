@@ -11,6 +11,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { API_URL, saveAccessToken } from '../services/api';
@@ -35,6 +36,8 @@ function isIosBrowser() {
 
 export default function LoginScreen() {
   const { tr } = useLanguage();
+  const { width } = useWindowDimensions();
+  const isDesktop = Platform.OS === 'web' && width >= 900;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -183,7 +186,7 @@ export default function LoginScreen() {
   return (
     <ImageBackground
       source={require('../../assets/images/ChatGPT Image 18 ago 2026, 12_13_50.png')}
-      style={styles.wrapper}
+      style={[styles.wrapper, isDesktop && styles.desktopWrapper]}
       resizeMode="cover"
     >
       <KeyboardAvoidingView
@@ -191,18 +194,18 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, isDesktop && styles.desktopScrollContent]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.card}>
+          <View style={[styles.card, isDesktop && styles.desktopCard]}>
             <View style={styles.hero}>
               <View style={styles.heroImageWrap}>
                 <Image source={require('../../assets/images/hwperu-official-icon.png')} style={styles.heroImage} />
               </View>
             </View>
 
-            <Text style={styles.title}>{tr('Welcome to HWPerú', 'Bienvenido a HWPerú')}</Text>
+            <Text style={[styles.title, isDesktop && styles.desktopTitle]}>{tr('Welcome to HWPerú', 'Bienvenido a HWPerú')}</Text>
             <Text style={styles.subtitle}>{tr('Digital Attendance Platform', 'Plataforma Digital de Asistencia')}</Text>
 
             <View style={styles.divider} />
