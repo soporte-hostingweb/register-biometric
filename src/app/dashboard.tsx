@@ -913,17 +913,16 @@ export default function Dashboard() {
           {cargo && <Text style={styles.roleTag}>{tr('Position', 'Cargo')}: {cargo}</Text>}
         </View>
 
-        <TouchableOpacity style={styles.menuButton} onPress={() => setMenuVisible(true)}>
-          <View style={styles.avatarButton}>
-            {profilePhoto
-              ? <Image source={{ uri: profilePhoto }} style={styles.avatarPhoto} />
-              : <Ionicons name="person-outline" size={18} color="#208AEF" />}
-          </View>
-        </TouchableOpacity>
-      </View>
+        <View style={styles.menuArea}>
+          <TouchableOpacity style={styles.menuButton} onPress={() => setMenuVisible((visible) => !visible)}>
+            <View style={styles.avatarButton}>
+              {profilePhoto
+                ? <Image source={{ uri: profilePhoto }} style={styles.avatarPhoto} />
+                : <Ionicons name="person-outline" size={18} color="#208AEF" />}
+            </View>
+          </TouchableOpacity>
 
-      <Modal visible={menuVisible} transparent animationType="fade">
-        <Pressable style={styles.overlay} onPress={() => setMenuVisible(false)}>
+          {menuVisible && (
           <View style={styles.dropdown}>
             <TouchableOpacity style={styles.dropdownItem} onPress={handlePerfil}>
               <Ionicons name="person-outline" size={18} color="#1A1D29" />
@@ -953,8 +952,9 @@ export default function Dashboard() {
               <Text style={[styles.dropdownText, styles.logoutText]}>{tr('Sign out', 'Cerrar sesión')}</Text>
             </TouchableOpacity>
           </View>
-        </Pressable>
-      </Modal>
+          )}
+        </View>
+      </View>
 
       <Modal visible={showPushPrompt} transparent animationType="fade">
         <View style={styles.pushPermissionOverlay}>

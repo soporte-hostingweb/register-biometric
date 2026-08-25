@@ -15,6 +15,11 @@ export const styles = StyleSheet.create({
   menuButton: {
     padding: 2,
   },
+  menuArea: {
+    position: 'relative',
+    zIndex: 100,
+    alignItems: 'flex-end',
+  },
   avatarButton: {
     width: 38,
     height: 38,
@@ -29,8 +34,8 @@ export const styles = StyleSheet.create({
   },
   dropdown: {
     position: 'absolute',
-    top: 90,
-    right: 20,
+    top: 48,
+    right: 0,
     backgroundColor: '#1E1E1E',
     borderRadius: 12,
     paddingVertical: 6,
@@ -40,6 +45,7 @@ export const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 10,
     elevation: 4,
+    zIndex: 110,
   },
   dropdownItem: {
     flexDirection: 'row',
