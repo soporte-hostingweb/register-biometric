@@ -191,11 +191,14 @@ export const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     gap: 8,
   },
   statCard: {
     flex: 1,
+    flexBasis: '22%',
+    minWidth: 120,
     backgroundColor: '#1E1E1E',
     borderRadius: 12,
     padding: 12,
@@ -221,6 +224,9 @@ export const styles = StyleSheet.create({
   },
   statValueGood: {
     color: '#66BB6A',
+  },
+  statValueAbsent: {
+    color: '#EF5350',
   },
   recentTitleRow: {
     flexDirection: 'row',
@@ -366,6 +372,7 @@ export const styles = StyleSheet.create({
   },
   fullHistorySummary: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-around',
     paddingVertical: 12,
     paddingHorizontal: 16,

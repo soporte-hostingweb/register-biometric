@@ -50,6 +50,18 @@ const getStorageKey = (userEmail?: string | null) => {
   return `@asistencia_marcaciones_${cleanEmail}`;
 };
 
+const parseAttendanceDate = (value: unknown) => {
+  const dateOnly = String(value || '').slice(0, 10);
+  const match = dateOnly.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0);
+  return new Date(String(value || ''));
+};
+
+const hasClockIn = (log: any) => {
+  const value = String(log?.clockIn || '').trim().toLowerCase();
+  return value !== '' && value !== '--' && value !== '-- : --' && value !== '-' && value !== 'null';
+};
+
 const formatLocalTimeFromUTC = (timeStr?: string | null, dateStr?: string | null): string => {
   if (!timeStr || timeStr === '--' || timeStr === '-' || timeStr === 'null') {
     return '--';
@@ -580,9 +592,15 @@ export default function Dashboard() {
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
 
-  const thisMonthLogs = historyLogs.filter((log: any) => {
+  const workdayHistoryLogs = historyLogs.filter((log: any) => {
     if (!log.date) return false;
-    const logDate = new Date(log.date);
+    const logDate = parseAttendanceDate(log.date);
+    const weekday = logDate.getDay();
+    return weekday >= 1 && weekday <= 5;
+  });
+
+  const thisMonthLogs = workdayHistoryLogs.filter((log: any) => {
+    const logDate = parseAttendanceDate(log.date);
     return logDate.getMonth() === currentMonth && logDate.getFullYear() === currentYear;
   });
 
@@ -591,8 +609,9 @@ export default function Dashboard() {
     return acc + (isNaN(hrs) ? 0 : hrs);
   }, 0).toFixed(1);
 
-  const tardanzas = thisMonthLogs.filter((log: any) => log.status === 'Tardanza').length;
-  const asistencias = thisMonthLogs.filter((log: any) => log.status !== 'Falta' && log.status !== 'Inasistencia').length;
+  const tardanzas = thisMonthLogs.filter((log: any) => hasClockIn(log) && ['tarde', 'tardanza'].includes(String(log.status).toLowerCase())).length;
+  const asistencias = thisMonthLogs.filter((log: any) => hasClockIn(log)).length;
+  const faltas = thisMonthLogs.filter((log: any) => !hasClockIn(log)).length;
 
   const loadExcelJS = () => {
     return new Promise<any>((resolve, reject) => {
@@ -699,7 +718,7 @@ export default function Dashboard() {
           const dataRow = worksheet.getRow(rowIndex);
           dataRow.height = 22;
 
-          const dateObj = new Date(log.date);
+          const dateObj = parseAttendanceDate(log.date);
           const dateStr = dateObj.toLocaleDateString('es-PE');
           const clockIn = formatLocalTimeFromUTC(log.clockIn, log.date);
           const clockOut = formatLocalTimeFromUTC(log.clockOut, log.date);
@@ -790,7 +809,7 @@ export default function Dashboard() {
 
         let tableRows = '';
         thisMonthLogs.forEach((log: any) => {
-          const dateObj = new Date(log.date);
+          const dateObj = parseAttendanceDate(log.date);
           const dateStr = dateObj.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
           let statusColor = '#4CAF50';
@@ -1078,15 +1097,21 @@ export default function Dashboard() {
                     <Text style={styles.statLabel}>{tr('Late arrivals', 'Tardanzas')}</Text>
                     <Text style={[styles.statValue, tardanzas > 0 && styles.statValueWarn]}>{tardanzas}</Text>
                   </View>
+
+                  <View style={styles.statCard}>
+                    <Ionicons name="close-circle-outline" size={16} color="#EF5350" />
+                    <Text style={styles.statLabel}>{tr('Absences', 'Faltas')}</Text>
+                    <Text style={[styles.statValue, faltas > 0 && styles.statValueAbsent]}>{faltas}</Text>
+                  </View>
                 </View>
               </View>
 
-              {historyLogs.length > 0 && (
+              {workdayHistoryLogs.length > 0 && (
                 <View style={[styles.historySection, { marginTop: 24, maxWidth: '100%' }]}>
                   <Text style={styles.historyTitle}>{tr('Recent History (Last days)', 'Historial Reciente (Últimos días)')}</Text>
 
-                  {historyLogs.slice(0, 5).map((log: any, idx: number) => {
-                    const dateObj = new Date(log.date);
+                  {workdayHistoryLogs.slice(0, 5).map((log: any, idx: number) => {
+                    const dateObj = parseAttendanceDate(log.date);
                     const formattedDate = dateObj.toLocaleDateString('es-PE', {
                       day: 'numeric',
                       month: 'short',
@@ -1121,14 +1146,14 @@ export default function Dashboard() {
                     );
                   })}
 
-                  {historyLogs.length > 5 && (
+                  {workdayHistoryLogs.length > 5 && (
                     <TouchableOpacity
                       style={styles.viewFullHistoryBtn}
                       onPress={() => setShowFullHistory(true)}
                       activeOpacity={0.8}
                     >
                       <Ionicons name="calendar-outline" size={16} color="#208AEF" />
-                      <Text style={styles.viewFullHistoryText}>Ver historial completo ({historyLogs.length} registros)</Text>
+                      <Text style={styles.viewFullHistoryText}>Ver historial completo ({workdayHistoryLogs.length} registros)</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1196,6 +1221,12 @@ export default function Dashboard() {
                   <Text style={styles.statLabel}>{tr('Late arrivals', 'Tardanzas')}</Text>
                   <Text style={[styles.statValue, tardanzas > 0 && styles.statValueWarn]}>{tardanzas}</Text>
                 </View>
+
+                <View style={styles.statCard}>
+                  <Ionicons name="close-circle-outline" size={16} color="#EF5350" />
+                  <Text style={styles.statLabel}>{tr('Absences', 'Faltas')}</Text>
+                  <Text style={[styles.statValue, faltas > 0 && styles.statValueAbsent]}>{faltas}</Text>
+                </View>
               </View>
             </View>
 
@@ -1259,12 +1290,12 @@ export default function Dashboard() {
               )}
             </View>
 
-            {historyLogs.length > 0 && (
+            {workdayHistoryLogs.length > 0 && (
               <View style={[styles.historySection, { marginTop: 24, marginBottom: 20 }]}>
                 <Text style={styles.historyTitle}>{tr('Recent History (Last days)', 'Historial Reciente (Últimos días)')}</Text>
 
-                {historyLogs.slice(0, 5).map((log: any, idx: number) => {
-                  const dateObj = new Date(log.date);
+                {workdayHistoryLogs.slice(0, 5).map((log: any, idx: number) => {
+                  const dateObj = parseAttendanceDate(log.date);
                   const formattedDate = dateObj.toLocaleDateString('es-PE', {
                     day: 'numeric',
                     month: 'short',
@@ -1299,14 +1330,14 @@ export default function Dashboard() {
                   );
                 })}
 
-                {historyLogs.length > 5 && (
+                {workdayHistoryLogs.length > 5 && (
                   <TouchableOpacity
                     style={styles.viewFullHistoryBtn}
                     onPress={() => setShowFullHistory(true)}
                     activeOpacity={0.8}
                   >
                     <Ionicons name="calendar-outline" size={16} color="#208AEF" />
-                    <Text style={styles.viewFullHistoryText}>Ver historial completo ({historyLogs.length} registros)</Text>
+                    <Text style={styles.viewFullHistoryText}>Ver historial completo ({workdayHistoryLogs.length} registros)</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -1342,11 +1373,15 @@ export default function Dashboard() {
                 <Ionicons name="warning-outline" size={14} color="#FFA726" />
                 <Text style={styles.fullHistorySummaryText}>{tardanzas} tardanzas</Text>
               </View>
+              <View style={styles.fullHistorySummaryItem}>
+                <Ionicons name="close-circle-outline" size={14} color="#EF5350" />
+                <Text style={styles.fullHistorySummaryText}>{faltas} faltas</Text>
+              </View>
             </View>
 
             <ScrollView style={styles.fullHistoryScroll} showsVerticalScrollIndicator={false}>
               {thisMonthLogs.map((log: any, idx: number) => {
-                const dateObj = new Date(log.date);
+                const dateObj = parseAttendanceDate(log.date);
                 const formattedDate = dateObj.toLocaleDateString('es-PE', {
                   weekday: 'short',
                   day: 'numeric',
