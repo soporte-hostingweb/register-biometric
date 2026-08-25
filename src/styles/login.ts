@@ -195,4 +195,22 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  desktopWrapper: {
+    padding: 36,
+  },
+  desktopScrollContent: {
+    paddingVertical: 36,
+  },
+  desktopCard: {
+    maxWidth: 470,
+    paddingHorizontal: 38,
+    paddingVertical: 34,
+    borderRadius: 28,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.38,
+    shadowRadius: 30,
+  },
+  desktopTitle: {
+    fontSize: 29,
+  },
 });

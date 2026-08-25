@@ -907,9 +907,9 @@ export default function Dashboard() {
 
   return (
     <SafeAreaView style={styles.wrapper} edges={['top']}>
-      <View style={styles.header}>
+      <View style={[styles.header, isDesktop && styles.desktopHeader, isDesktop && styles.desktopHeaderPanel]}>
         <View>
-          <Text style={styles.greeting}>{tr('Hello', 'Hola')}, {fullName}</Text>
+          <Text style={[styles.greeting, isDesktop && styles.desktopGreeting]}>{tr('Hello', 'Hola')}, {fullName}</Text>
           {cargo && <Text style={styles.roleTag}>{tr('Position', 'Cargo')}: {cargo}</Text>}
         </View>
 
@@ -976,13 +976,13 @@ export default function Dashboard() {
           <View style={styles.desktopContainer}>
             {/* Columna Izquierda: Reloj y Botón de Marcación, Historial de hoy */}
             <View style={styles.desktopLeftCol}>
-              <View style={[styles.clockCard, { marginTop: 0, maxWidth: '100%' }]}>
+              <View style={[styles.clockCard, styles.desktopClockCard, { marginTop: 0, maxWidth: '100%' }]}>
                 <Text style={styles.date}>{fecha}</Text>
-                <Text style={styles.clock}>{hora}</Text>
+                <Text style={[styles.clock, styles.desktopClock]}>{hora}</Text>
 
                 {faceEnrolled === false && (
                   <TouchableOpacity
-                    style={[styles.markButton, { backgroundColor: '#173A5E', marginBottom: 10 }, loading && styles.markButtonDisabled]}
+                    style={[styles.markButton, styles.desktopMarkButton, { backgroundColor: '#173A5E', marginBottom: 10 }, loading && styles.markButtonDisabled]}
                     onPress={openEnrollmentFlow}
                     disabled={loading}
                     activeOpacity={0.85}
@@ -992,7 +992,7 @@ export default function Dashboard() {
                 )}
 
                 <TouchableOpacity
-                  style={[styles.markButton, (loading || completadoHoy) && styles.markButtonDisabled]}
+                  style={[styles.markButton, styles.desktopMarkButton, (loading || completadoHoy) && styles.markButtonDisabled]}
                   onPress={openCameraFlow}
                   disabled={loading || completadoHoy}
                   activeOpacity={0.85}
@@ -1009,7 +1009,7 @@ export default function Dashboard() {
                 {message !== '' && <Text style={styles.message}>{message}</Text>}
               </View>
 
-              <View style={[styles.historySection, { maxWidth: '100%', marginTop: 24 }]}>
+              <View style={[styles.historySection, styles.desktopPanel, { marginTop: 24 }]}>
                 <Text style={styles.historyTitle}>{tr("Today's history", 'Historial de hoy')}</Text>
 
                 {hoyMarcaciones.length === 0 ? (
@@ -1038,7 +1038,7 @@ export default function Dashboard() {
             </View>
 
             <View style={styles.desktopRightCol}>
-              <View style={[styles.statsSection, { marginTop: 0, maxWidth: '100%' }]}>
+              <View style={[styles.statsSection, styles.desktopPanel, { marginTop: 0 }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <Text style={[styles.historyTitle, { marginBottom: 0 }]}>{tr('Monthly Summary', 'Resumen del Mes')}</Text>
                   {Platform.OS === 'web' && historyLogs.length > 0 && (
@@ -1107,7 +1107,7 @@ export default function Dashboard() {
               </View>
 
               {workdayHistoryLogs.length > 0 && (
-                <View style={[styles.historySection, { marginTop: 24, maxWidth: '100%' }]}>
+                <View style={[styles.historySection, styles.desktopPanel, { marginTop: 24 }]}>
                   <Text style={styles.historyTitle}>{tr('Recent History (Last days)', 'Historial Reciente (Últimos días)')}</Text>
 
                   {workdayHistoryLogs.slice(0, 5).map((log: any, idx: number) => {
