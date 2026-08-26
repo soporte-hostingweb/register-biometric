@@ -52,7 +52,10 @@ export async function subscribeToWebPush() {
   const response = await apiFetch('/api/push/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ subscription: subscription.toJSON() }),
+    body: JSON.stringify({
+      subscription: subscription.toJSON(),
+      appScope: 'ATTENDANCE',
+    }),
   });
 
   if (!response.ok) throw new Error('El servidor no pudo registrar este navegador.');
