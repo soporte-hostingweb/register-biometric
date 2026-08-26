@@ -593,6 +593,11 @@ export default function Dashboard() {
     router.push({ pathname: '/permisos' as any, params: { fullName, rol, email } });
   };
 
+  const handleAsistenciaGeneral = () => {
+    setMenuVisible(false);
+    router.push({ pathname: '/asistencia-general' as any, params: { fullName, rol, email } });
+  };
+
   const fecha = currentTime.toLocaleDateString('es-PE', {
     weekday: 'long',
     day: 'numeric',
@@ -948,6 +953,16 @@ export default function Dashboard() {
               <Ionicons name="calendar-outline" size={18} color="#1A1D29" />
               <Text style={styles.dropdownText}>{tr('My permissions', 'Mis permisos')}</Text>
             </TouchableOpacity>
+
+            {['ADMIN', 'SUPER_ADMIN'].includes(String(rol || '').toUpperCase()) && (
+              <>
+                <View style={styles.dropdownDivider} />
+                <TouchableOpacity style={styles.dropdownItem} onPress={handleAsistenciaGeneral}>
+                  <Ionicons name="people-outline" size={18} color="#1A1D29" />
+                  <Text style={styles.dropdownText}>{tr('General attendance', 'Asistencia general')}</Text>
+                </TouchableOpacity>
+              </>
+            )}
 
             {rol === 'SUPER_ADMIN' && (
               <>
