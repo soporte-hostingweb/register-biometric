@@ -10,10 +10,12 @@ export const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#04152A',
   },
+
   webBackground: {
     backgroundImage:
       'linear-gradient(145deg, #04152A 0%, #061B35 52%, #08264A 100%)',
   } as any,
+
   ambientGlow: {
     position: 'absolute',
     top: '12%',
@@ -23,22 +25,25 @@ export const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(40, 130, 255, 0.055)',
   },
+
   webAmbientGlow: {
     backgroundImage:
       'radial-gradient(circle at 50% 40%, rgba(40, 130, 255, 0.12), transparent 55%)',
     backgroundColor: 'transparent',
   } as any,
-  },
+
   contentOverlay: {
     flex: 1,
     zIndex: 1,
   },
+
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 20,
   },
+
   card: {
     width: '89%',
     maxWidth: 380,
@@ -55,21 +60,25 @@ export const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 6,
     backdropFilter: 'blur(12px)',
-  },
+  } as any,
+
   hero: {
     marginBottom: 10,
   },
+
   heroImageWrap: {
     width: 94,
     height: 94,
     justifyContent: 'center',
     alignItems: 'center',
   },
+
   heroImage: {
     width: 94,
     height: 94,
     resizeMode: 'contain',
   },
+
   title: {
     fontSize: 27,
     fontWeight: '700',
@@ -77,16 +86,19 @@ export const styles = StyleSheet.create({
     marginBottom: 4,
     textAlign: 'center',
   },
+
   subtitle: {
     fontSize: 15.5,
     color: 'rgba(255, 255, 255, 0.75)',
     marginBottom: 22,
     textAlign: 'center',
   },
+
   inputGroup: {
     width: '100%',
     marginBottom: 15,
   },
+
   label: {
     fontSize: 13,
     fontWeight: '600',
@@ -94,6 +106,7 @@ export const styles = StyleSheet.create({
     marginBottom: 8,
     letterSpacing: 0.2,
   },
+
   divider: {
     width: 42,
     height: 4,
@@ -101,6 +114,7 @@ export const styles = StyleSheet.create({
     backgroundColor: '#6ABEFF',
     marginBottom: 23,
   },
+
   fieldWrapper: {
     width: '100%',
     flexDirection: 'row',
@@ -112,6 +126,7 @@ export const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
     overflow: 'hidden',
   },
+
   fieldWrapperFocus: {
     borderColor: '#60B8FF',
     shadowColor: '#005FF7',
@@ -120,6 +135,7 @@ export const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
+
   input: {
     width: '100%',
     flex: 1,
@@ -133,6 +149,7 @@ export const styles = StyleSheet.create({
     borderColor: 'transparent',
     includeFontPadding: false,
   },
+
   passwordWrapper: {
     width: '100%',
     position: 'relative',
@@ -145,6 +162,7 @@ export const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
     overflow: 'hidden',
   },
+
   passwordInput: {
     flex: 1,
     width: '100%',
@@ -159,6 +177,7 @@ export const styles = StyleSheet.create({
     borderColor: 'transparent',
     includeFontPadding: false,
   },
+
   eyeButton: {
     position: 'absolute',
     top: 0,
@@ -171,10 +190,12 @@ export const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderLeftColor: 'rgba(255,255,255,0.16)',
   },
+
   fieldIcon: {
     marginLeft: 12,
     marginRight: 8,
   },
+
   button: {
     width: '100%',
     minHeight: 55,
@@ -184,18 +205,22 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
   },
+
   buttonDisabled: {
     opacity: 0.6,
   },
+
   buttonPressed: {
     opacity: 0.88,
   },
+
   buttonText: {
     color: '#082246',
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
+
   installButton: {
     width: '100%',
     minHeight: 53,
@@ -209,11 +234,13 @@ export const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: 'transparent',
   },
+
   installButtonText: {
     color: '#D9ECFF',
     fontSize: 14,
     fontWeight: '700',
   },
+
   updateBanner: {
     width: '100%',
     marginTop: 14,
@@ -224,17 +251,20 @@ export const styles = StyleSheet.create({
     backgroundColor: 'rgba(5, 28, 51, 0.72)',
     gap: 10,
   },
+
   updateCopy: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
+
   updateText: {
     color: '#EAF5FF',
     fontSize: 13,
     fontWeight: '600',
   },
+
   updateButton: {
     minHeight: 40,
     borderRadius: 10,
@@ -242,17 +272,21 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(114, 189, 245, 0.16)',
   },
+
   updateButtonText: {
     color: '#8DCCFA',
     fontSize: 13,
     fontWeight: '700',
   },
+
   desktopWrapper: {
     padding: 36,
   },
+
   desktopScrollContent: {
     paddingVertical: 36,
   },
+
   desktopCard: {
     maxWidth: 380,
     paddingHorizontal: 32,
@@ -262,6 +296,7 @@ export const styles = StyleSheet.create({
     shadowOpacity: 0.38,
     shadowRadius: 30,
   },
+
   desktopTitle: {
     fontSize: 29,
   },
