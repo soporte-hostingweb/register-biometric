@@ -414,7 +414,7 @@ export default function PerfilScreen() {
               {imageUri ? (
                 <Image source={{ uri: imageUri }} style={styles.avatarImage} />
               ) : (
-                <Image source={require('../../assets/images/hwperu-official-icon.png')} style={[styles.avatarImage, { resizeMode: 'contain' }]} />
+                <Image source={require('../../assets/images/hwperu-icon-v4.png')} style={[styles.avatarImage, { resizeMode: 'contain' }]} />
               )}
               <View style={styles.cameraBadge}>
                 {photoSaving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="camera" size={16} color="#FFFFFF" />}
@@ -487,7 +487,7 @@ export default function PerfilScreen() {
               {imageUri ? (
                 <Image source={{ uri: imageUri }} style={styles.avatarImage} />
               ) : (
-                <Image source={require('../../assets/images/hwperu-official-icon.png')} style={[styles.avatarImage, { resizeMode: 'contain' }]} />
+                <Image source={require('../../assets/images/hwperu-icon-v4.png')} style={[styles.avatarImage, { resizeMode: 'contain' }]} />
               )}
               <View style={styles.cameraBadge}>
                 {photoSaving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="camera" size={14} color="#FFFFFF" />}

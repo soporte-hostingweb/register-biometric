@@ -24,8 +24,8 @@ self.addEventListener('push', (event) => {
   const options = {
     body: payload.body || '',
     data: payload.data || { url: '/' },
-    icon: '/icons/pwa-icon-192.png',
-    badge: '/icons/pwa-icon-maskable-192.png',
+    icon: '/icons/notification-icon-v4.png',
+    badge: '/icons/notification-badge-v4.png',
     tag: payload.tag || 'hwperu-asistencia',
     renotify: false,
   };

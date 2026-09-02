@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Image,
-  ImageBackground,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -26,6 +25,8 @@ type PwaInstallPromptEvent = Event & {
 
 type PwaWindow = Window & {
   __pwaInstallPrompt?: PwaInstallPromptEvent | null;
+  __applyPwaUpdate?: () => Promise<void>;
+  __pwaUpdateAvailable?: boolean;
 };
 
 function isIosBrowser() {
@@ -43,6 +44,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showInstallButton, setShowInstallButton] = useState(false);
+  const [showUpdateBanner, setShowUpdateBanner] = useState(false);
   const [focusedInput, setFocusedInput] = useState<'email' | 'password' | null>(null);
 
   useEffect(() => {
@@ -74,6 +76,22 @@ export default function LoginScreen() {
       window.removeEventListener('pwa-app-installed', handleInstalled);
     };
   }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    if ((window as PwaWindow).__pwaUpdateAvailable) setShowUpdateBanner(true);
+    const handleUpdateAvailable = () => setShowUpdateBanner(true);
+    window.addEventListener('pwa-update-available', handleUpdateAvailable);
+    return () => window.removeEventListener('pwa-update-available', handleUpdateAvailable);
+  }, []);
+
+  const handleUpdateNow = async () => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const applyUpdate = (window as PwaWindow).__applyPwaUpdate;
+    if (applyUpdate) await applyUpdate();
+    else window.location.reload();
+  };
 
   const handleInstall = async () => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
@@ -184,11 +202,17 @@ export default function LoginScreen() {
   };
 
   return (
-    <ImageBackground
-      source={require('../../assets/images/ChatGPT Image 18 ago 2026, 12_13_50.png')}
-      style={[styles.wrapper, isDesktop && styles.desktopWrapper]}
-      resizeMode="cover"
+    <View
+      style={[
+        styles.wrapper,
+        Platform.OS === 'web' && styles.webBackground,
+        isDesktop && styles.desktopWrapper,
+      ]}
     >
+      <View
+        pointerEvents="none"
+        style={[styles.ambientGlow, Platform.OS === 'web' && styles.webAmbientGlow]}
+      />
       <KeyboardAvoidingView
         style={styles.contentOverlay}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -201,7 +225,7 @@ export default function LoginScreen() {
           <View style={[styles.card, isDesktop && styles.desktopCard]}>
             <View style={styles.hero}>
               <View style={styles.heroImageWrap}>
-                <Image source={require('../../assets/images/hwperu-official-icon.png')} style={styles.heroImage} />
+                <Image source={require('../../assets/images/hwperu-icon-v4.png')} style={styles.heroImage} />
               </View>
             </View>
 
@@ -310,9 +334,29 @@ export default function LoginScreen() {
               </TouchableOpacity>
             )}
 
+            {showUpdateBanner && (
+              <View style={styles.updateBanner} accessibilityRole="alert">
+                <View style={styles.updateCopy}>
+                  <Ionicons name="sparkles-outline" size={18} color="#7EC3FF" />
+                  <Text style={styles.updateText}>
+                    {tr('A new version is available', 'Nueva versión disponible')}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.updateButton}
+                  onPress={handleUpdateNow}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.updateButtonText}>
+                    {tr('Update now', 'Actualizar ahora')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </ImageBackground>
+    </View>
   );
 }

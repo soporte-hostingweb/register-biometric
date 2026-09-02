@@ -15,13 +15,20 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="apple-mobile-web-app-title" content="HWPerú - Asistencia" />
         <meta name="description" content="Plataforma digital de asistencia HWPerú" />
         <link rel="manifest" href="/manifest.webmanifest" />
-        <link rel="icon" type="image/png" sizes="192x192" href="/icons/pwa-icon-v3-192.png?v=4" />
-        <link rel="shortcut icon" type="image/png" href="/icons/pwa-icon-v3-192.png?v=4" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-v3.png?v=4" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icons/pwa-icon-v4-192.png" />
+        <link rel="shortcut icon" type="image/png" href="/icons/pwa-icon-v4-192.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-v4.png" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
               window.__pwaInstallPrompt = null;
+              window.__pwaUpdateAvailable = false;
+
+              function notifyUpdateAvailable() {
+                if (window.__pwaUpdateAvailable) return;
+                window.__pwaUpdateAvailable = true;
+                window.dispatchEvent(new Event('pwa-update-available'));
+              }
 
               window.addEventListener('beforeinstallprompt', function (event) {
                 event.preventDefault();
@@ -36,7 +43,46 @@ export default function Root({ children }: PropsWithChildren) {
 
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function () {
-                  navigator.serviceWorker.register('/push-sw.js').catch(function (error) {
+                  var refreshing = false;
+                  var registration;
+
+                  window.__applyPwaUpdate = async function () {
+                    if (refreshing) return;
+                    refreshing = true;
+                    try {
+                      if (registration) await registration.update();
+                    } finally {
+                      window.location.reload();
+                    }
+                  };
+
+                  navigator.serviceWorker.register('/push-sw.js').then(function (nextRegistration) {
+                    registration = nextRegistration;
+                    registration.addEventListener('updatefound', function () {
+                      var worker = registration.installing;
+                      if (!worker) return;
+                      worker.addEventListener('statechange', function () {
+                        if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+                          notifyUpdateAvailable();
+                        }
+                      });
+                    });
+
+                    var initialHtmlSignature = null;
+                    function checkHtmlVersion() {
+                      fetch('/', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
+                        .then(function (response) { return response.text(); })
+                        .then(function (html) {
+                          var signature = html.match(/\/_expo\/static\/[^\"']+/g)?.join('|') || html.length + ':' + html.slice(0, 512);
+                          if (initialHtmlSignature === null) initialHtmlSignature = signature;
+                          else if (signature !== initialHtmlSignature) notifyUpdateAvailable();
+                        })
+                        .catch(function () {});
+                    }
+
+                    checkHtmlVersion();
+                    window.setInterval(checkHtmlVersion, 300000);
+                  }).catch(function (error) {
                     console.error('No se pudo registrar el service worker:', error);
                   });
                 });
@@ -61,16 +107,16 @@ export default function Root({ children }: PropsWithChildren) {
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                background: #FFFFFF;
-                animation: hwperuSplashOut 0.42s ease 1.15s forwards;
+                background: #051C33;
+                animation: hwperuSplashOut 0.36s ease 0.9s forwards;
                 pointer-events: none;
               }
 
               #hwperu-boot-splash img {
-                width: min(78vw, 460px);
+                width: min(38vw, 150px);
                 height: auto;
                 object-fit: contain;
-                animation: hwperuLogoIn 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+                animation: hwperuLogoIn 0.48s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
               }
 
               @keyframes hwperuLogoIn {
@@ -151,7 +197,7 @@ export default function Root({ children }: PropsWithChildren) {
       </head>
       <body>
         <div id="hwperu-boot-splash" aria-hidden="true">
-          <img src="/icons/hwperu-official-logo.png" alt="" />
+          <img src="/icons/hwperu-logo-v4.png" alt="" />
         </div>
         {children}
       </body>
