@@ -17,7 +17,6 @@ const types = [
   ['OTHER', 'Otro permiso', 'Other permission'],
 ];
 
-//adadadasdadadadadad
 const typeLabel = (value: string, tr: (english: string, spanish: string) => string) => {
   const found = types.find(([id]) => id === value);
   return found ? tr(found[2], found[1]) : value;

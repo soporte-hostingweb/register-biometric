@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   Alert,
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -13,7 +14,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { API_URL, saveAccessToken } from '../services/api';
+import { API_URL, clearAuthSession, restoreSession, saveLoginSession } from '../services/api';
 import { completeDeviceAuthorization } from '../services/device-auth';
 import { useLanguage } from '../services/language';
 import { styles } from '../styles/login';
@@ -39,6 +40,7 @@ export default function LoginScreen() {
   const { tr } = useLanguage();
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width >= 900;
+  const [checkingSession, setCheckingSession] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -46,6 +48,42 @@ export default function LoginScreen() {
   const [showInstallButton, setShowInstallButton] = useState(false);
   const [showUpdateBanner, setShowUpdateBanner] = useState(false);
   const [focusedInput, setFocusedInput] = useState<'email' | 'password' | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkExistingSession = async () => {
+      try {
+        const session = await restoreSession();
+        if (cancelled) return;
+
+        if (!session.user?.email || !session.user.rol) {
+          setCheckingSession(false);
+          return;
+        }
+
+        router.replace({
+          pathname: '/dashboard',
+          params: {
+            fullName: session.user.fullName,
+            email: session.user.email,
+            rol: session.user.rol,
+          },
+        });
+      } catch {
+        if (!cancelled) {
+          await clearAuthSession();
+          setCheckingSession(false);
+        }
+      }
+    };
+
+    checkExistingSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
@@ -174,7 +212,22 @@ export default function LoginScreen() {
           return;
         }
 
-        await saveAccessToken(data.user.token);
+        if (
+          typeof data.user.email !== 'string' ||
+          typeof data.user.fullName !== 'string' ||
+          typeof data.user.rol !== 'string'
+        ) {
+          showAlert('Error', 'Server response does not include valid user data');
+          setLoading(false);
+          return;
+        }
+
+        await saveLoginSession({
+          email: data.user.email,
+          fullName: data.user.fullName,
+          rol: data.user.rol,
+        }, data.user.token);
+
         router.push({
           pathname: '/dashboard',
           params: {
@@ -200,6 +253,21 @@ export default function LoginScreen() {
       setLoading(false);
     }
   };
+
+  if (checkingSession) {
+    return (
+      <View style={[
+        styles.wrapper,
+        Platform.OS === 'web' && styles.webBackground,
+        isDesktop && styles.desktopWrapper,
+      ]}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+          <ActivityIndicator size="large" color="#7EC3FF" />
+          <Text style={{ color: '#D1DBEF' }}>{tr('Checking session...', 'Verificando sesión...')}</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View

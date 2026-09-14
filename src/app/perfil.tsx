@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import { apiFetch, clearAccessToken } from '../services/api';
+import { apiFetch, clearAuthSession } from '../services/api';
 import { createDeviceAuthenticationCredential } from '../services/device-auth';
 import { useLanguage } from '../services/language';
 
@@ -205,7 +205,7 @@ export default function PerfilScreen() {
 
       setNewPassword('');
       setConfirmPassword('');
-      await clearAccessToken();
+      await clearAuthSession();
       alert('Contraseña actualizada correctamente. Inicia sesión nuevamente.');
       router.replace('/');
     } catch (passwordChangeError: any) {
