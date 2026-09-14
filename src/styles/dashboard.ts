@@ -1,5 +1,19 @@
 import { StyleSheet } from 'react-native';
 
+// Ancho maximo del contenido en movil. Sin este tope, en un iPhone Pro Max o en
+// una tablet las tarjetas se estiran hasta resultar incomodas de leer.
+const MOBILE_MAX_WIDTH = 440;
+
+// iOS dibuja sombras con shadow*; Android solo entiende elevation. Se definen
+// juntas para que una tarjeta se vea igual en los dos sistemas.
+const CARD_SHADOW = {
+  shadowColor: '#000000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.18,
+  shadowRadius: 8,
+  elevation: 3,
+};
+
 export const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
@@ -70,11 +84,15 @@ export const styles = StyleSheet.create({
   content: {
     padding: 20,
     alignItems: 'center',
+    // Margen inferior generoso: deja sitio al indicador de inicio del iPhone y
+    // evita que la ultima tarjeta quede pegada al borde en Android.
+    paddingBottom: 40,
   },
   greeting: {
-    fontSize: 18,
+    fontSize: 21,
     fontWeight: '700',
     color: '#FFFFFF',
+    letterSpacing: -0.3,
   },
   roleTag: {
     fontSize: 12,
@@ -500,4 +518,239 @@ export const styles = StyleSheet.create({
   pushPermissionButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   pushPermissionLater: { paddingVertical: 13, paddingHorizontal: 20 },
   pushPermissionLaterText: { color: '#8FA9BC', fontWeight: '700' },
+
+  pinInput: {
+    width: '100%',
+    backgroundColor: '#071B2D',
+    borderWidth: 1,
+    borderColor: '#315572',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginTop: 18,
+    color: '#FFFFFF',
+    fontSize: 22,
+    letterSpacing: 8,
+    textAlign: 'center',
+  },
+
+  // --- Rediseño móvil ---
+  headerDate: {
+    color: '#8FA3BF',
+    fontSize: 13,
+    marginTop: 2,
+  },
+  heroCard: {
+    width: '100%',
+    maxWidth: MOBILE_MAX_WIDTH,
+    backgroundColor: '#0C2137',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#17324C',
+    paddingVertical: 26,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    marginTop: 4,
+    ...CARD_SHADOW,
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  statusPillPending: {
+    backgroundColor: 'rgba(255, 184, 107, 0.12)',
+    borderColor: 'rgba(255, 184, 107, 0.35)',
+  },
+  statusPillActive: {
+    backgroundColor: 'rgba(126, 195, 255, 0.12)',
+    borderColor: 'rgba(126, 195, 255, 0.35)',
+  },
+  statusPillDone: {
+    backgroundColor: 'rgba(134, 229, 168, 0.12)',
+    borderColor: 'rgba(134, 229, 168, 0.35)',
+  },
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  statusPillTextPending: { color: '#FFB86B' },
+  statusPillTextActive: { color: '#7EC3FF' },
+  statusPillTextDone: { color: '#86E5A8' },
+  heroClock: {
+    color: '#FFFFFF',
+    fontSize: 46,
+    fontWeight: '200',
+    letterSpacing: 1.5,
+    marginTop: 16,
+    // Cifras de ancho fijo: sin esto el reloj "salta" cada segundo al cambiar
+    // entre digitos anchos y estrechos.
+    fontVariant: ['tabular-nums'],
+  },
+  heroShift: {
+    color: '#8FA3BF',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  primaryAction: {
+    backgroundColor: '#2F86E8',
+    borderRadius: 15,
+    paddingVertical: 16,
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+    marginTop: 20,
+  },
+  primaryActionDisabled: {
+    backgroundColor: '#1B3A57',
+  },
+  primaryActionText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  secondaryAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    marginTop: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    minHeight: 44,
+  },
+  secondaryActionText: {
+    color: '#7EC3FF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  enrollCard: {
+    width: '100%',
+    maxWidth: MOBILE_MAX_WIDTH,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#0C2137',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#17324C',
+    padding: 15,
+    marginTop: 14,
+    minHeight: 68,
+    ...CARD_SHADOW,
+  },
+  enrollIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 184, 107, 0.12)',
+  },
+  enrollTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  enrollSubtitle: {
+    color: '#8FA3BF',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  sectionTitle: {
+    color: '#C9D6E8',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  summarySection: {
+    width: '100%',
+    maxWidth: MOBILE_MAX_WIDTH,
+    marginTop: 28,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  exportChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: '#17324C',
+  },
+  exportChipText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    gap: 7,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: '#0C2137',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#17324C',
+    paddingVertical: 15,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...CARD_SHADOW,
+  },
+  summaryValue: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  summaryUnit: {
+    color: '#8FA3BF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  summaryValueWarn: { color: '#FFB86B' },
+  summaryValueBad: { color: '#FF8A8A' },
+  summaryLabel: {
+    color: '#8FA3BF',
+    fontSize: 10.5,
+    marginTop: 5,
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+  todaySection: {
+    width: '100%',
+    maxWidth: MOBILE_MAX_WIDTH,
+    marginTop: 28,
+  },
+  todayEmpty: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#17324C',
+    borderStyle: 'dashed',
+    paddingVertical: 26,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  todayEmptyTitle: {
+    color: '#C9D6E8',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  todayEmptyHint: {
+    color: '#6E8297',
+    fontSize: 12,
+    marginTop: 5,
+    textAlign: 'center',
+  },
 });

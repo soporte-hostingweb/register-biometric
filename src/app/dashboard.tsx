@@ -5,7 +5,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Image, Modal, Platform, Pressable, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch, logoutFromApi } from '../services/api';
 import { getWebPushPermission, subscribeToWebPush, supportsWebPush } from '../services/web-push';
@@ -32,10 +32,11 @@ type Marcacion = {
   ubicacion: string;
 };
 
-type Empleado = {
-  cargo: string | null;
-  email: string | null;
-};
+// Las tres formas de marcar. Sin credencial es el botón directo, sin verificar.
+type AttendanceCredential =
+  | { kind: 'face'; photoDataUrl: string; faceDescriptor: number[] }
+  | { kind: 'pin'; pin: string }
+  | null;
 
 const getTodayDateStr = () => {
   const d = new Date();
@@ -48,6 +49,19 @@ const getTodayDateStr = () => {
 const getStorageKey = (userEmail?: string | null) => {
   const cleanEmail = (userEmail || 'guest').trim().toLowerCase();
   return `@asistencia_marcaciones_${cleanEmail}`;
+};
+
+// SQL Server devuelve las columnas TIME como Date con fecha 1970, asi que no vale
+// con recortar la cadena: hay que leer la parte horaria en UTC.
+const formatShiftTime = (value: unknown): string | null => {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const match = /^(\d{2}):(\d{2})/.exec(value.trim());
+    return match ? `${match[1]}:${match[2]}` : null;
+  }
+  const asDate = new Date(value as any);
+  if (Number.isNaN(asDate.getTime())) return null;
+  return asDate.toISOString().slice(11, 16);
 };
 
 const parseAttendanceDate = (value: unknown) => {
@@ -143,6 +157,13 @@ export default function Dashboard() {
   const [menuPosition, setMenuPosition] = useState({ top: 72, right: 20 });
   const menuButtonRef = useRef<View>(null);
   const [cargo, setCargo] = useState<string | null>(null);
+  const [shift, setShift] = useState<{ entryTime: string | null; exitTime: string | null }>({
+    entryTime: null,
+    exitTime: null,
+  });
+  const [hasAttendancePin, setHasAttendancePin] = useState(false);
+  const [pinPromptVisible, setPinPromptVisible] = useState(false);
+  const [pinValue, setPinValue] = useState('');
   const [historyLogs, setHistoryLogs] = useState<any[]>([]);
   const [showFullHistory, setShowFullHistory] = useState(false);
   const [cameraVisible, setCameraVisible] = useState(false);
@@ -377,23 +398,42 @@ export default function Dashboard() {
   }, [email, fullName]);
 
   useEffect(() => {
-    const fetchCargo = async () => {
+    // Antes esto pedia /api/empleados, que exige el permiso CanEmpleados: un
+    // empleado normal recibia 403 y el cargo no aparecia nunca. /api/auth/profile
+    // devuelve los datos del propio usuario sin permisos especiales, y ademas trae
+    // el horario que necesita la tarjeta principal.
+    const fetchProfile = async () => {
       try {
-        const response = await apiFetch('/api/empleados');
+        const response = await apiFetch('/api/auth/profile');
+        if (!response.ok) return;
         const data = await response.json();
-        const encontrado = data.find(
-          (emp: Empleado) => emp.email?.toLowerCase() === email?.toLowerCase()
-        );
-        if (encontrado) {
-          setCargo(encontrado.cargo);
-        }
-      } catch (err) {
-        // Si falla, simplemente no se muestra el cargo
+        const employee = data?.employee;
+        if (!employee) return;
+        if (employee.cargo) setCargo(employee.cargo);
+        setShift({
+          entryTime: formatShiftTime(employee.entryTime),
+          exitTime: formatShiftTime(employee.exitTime),
+        });
+      } catch {
+        // Sin perfil simplemente no se muestran cargo ni turno.
+      }
+    };
+
+    // El backend nunca devuelve el PIN, solo si existe: es una credencial cifrada.
+    const fetchPinStatus = async () => {
+      try {
+        const response = await apiFetch('/api/attendance/me/biometric-pin');
+        if (!response.ok) return;
+        const data = await response.json();
+        setHasAttendancePin(Boolean(data?.hasAttendancePin));
+      } catch {
+        // Sin respuesta simplemente no se ofrece la opción de PIN.
       }
     };
 
     if (email) {
-      fetchCargo();
+      fetchProfile();
+      fetchPinStatus();
     }
   }, [email]);
 
@@ -406,9 +446,11 @@ export default function Dashboard() {
 
   const siguienteTipo: 'Entrada' | 'Salida' = tieneEntradaHoy ? 'Salida' : 'Entrada';
 
+  // Ya no redirige al alta facial: marcar sin rostro es una opcion valida, asi que
+  // este camino solo se ofrece a quien ya tiene su plantilla registrada.
   const openCameraFlow = () => {
     if (completadoHoy) {
-      setMessage('Ya registraste tu Entrada y Salida por el día de hoy');
+      setMessage(tr('You already clocked in and out today', 'Ya registraste tu Entrada y Salida por el día de hoy'));
       return;
     }
 
@@ -419,6 +461,37 @@ export default function Dashboard() {
     setCameraPurpose('attendance');
     setMessage('');
     setCameraVisible(true);
+  };
+
+  const handleMarcar = (photoDataUrl: string, faceDescriptor: number[]) =>
+    submitAttendance({ kind: 'face', photoDataUrl, faceDescriptor });
+
+  const openPinPrompt = () => {
+    if (completadoHoy) {
+      setMessage(tr('You already clocked in and out today', 'Ya registraste tu Entrada y Salida por el día de hoy'));
+      return;
+    }
+    setPinValue('');
+    setMessage('');
+    setPinPromptVisible(true);
+  };
+
+  const confirmPinMark = () => {
+    const pin = pinValue.trim();
+    if (!/^[0-9]{4,10}$/.test(pin)) {
+      setMessage(tr('The PIN must be 4 to 10 digits', 'El PIN debe tener entre 4 y 10 dígitos'));
+      return;
+    }
+    setPinPromptVisible(false);
+    submitAttendance({ kind: 'pin', pin });
+  };
+
+  const handleQuickMark = () => {
+    if (completadoHoy) {
+      setMessage(tr('You already clocked in and out today', 'Ya registraste tu Entrada y Salida por el día de hoy'));
+      return;
+    }
+    submitAttendance(null);
   };
 
   const openEnrollmentFlow = () => {
@@ -449,9 +522,12 @@ export default function Dashboard() {
     }
   };
 
-  const handleMarcar = async (photoDataUrl: string, faceDescriptor: number[]) => {
-    if (!photoDataUrl || !Array.isArray(faceDescriptor) || faceDescriptor.length < 64) {
-      setMessage('Debes tomar una fotografía facial para registrar la asistencia');
+  // El empleado elige como marcar. Con `face` se envia la plantilla y el servidor
+  // verifica la identidad; sin ella la marcacion se guarda como NO verificada.
+  const submitAttendance = async (credential: AttendanceCredential) => {
+    if (credential?.kind === 'face' &&
+      (!credential.photoDataUrl || !Array.isArray(credential.faceDescriptor) || credential.faceDescriptor.length < 64)) {
+      setMessage(tr('You must take a photo to verify your identity', 'Debes tomar una fotografía para verificar tu identidad'));
       return;
     }
 
@@ -501,9 +577,16 @@ export default function Dashboard() {
             checkType,
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
-            photoData: photoDataUrl,
-            faceDescriptor,
-            faceModel: 'human-faceres-v1',
+            // Se envía solo el campo de la credencial elegida. Omitirlos todos es lo
+            // que el backend interpreta como marcación rápida sin verificar.
+            ...(credential?.kind === 'face'
+              ? {
+                  photoData: credential.photoDataUrl,
+                  faceDescriptor: credential.faceDescriptor,
+                  faceModel: 'human-faceres-v1',
+                }
+              : {}),
+            ...(credential?.kind === 'pin' ? { attendancePin: credential.pin } : {}),
           }),
           signal: controller.signal,
         });
@@ -598,13 +681,28 @@ export default function Dashboard() {
     router.push({ pathname: '/asistencia-general' as any, params: { fullName, rol, email } });
   };
 
-  const fecha = currentTime.toLocaleDateString('es-PE', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
+  const capitalize = (value: string) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : value);
+
+  const fecha = capitalize(
+    currentTime.toLocaleDateString('es-PE', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }),
+  );
 
   const hora = currentTime.toLocaleTimeString();
+
+  const monthLabel = capitalize(currentTime.toLocaleDateString('es-PE', { month: 'long' }));
+
+  const shiftLabel = (() => {
+    if (!shift.entryTime || !shift.exitTime) return null;
+    const startHour = Number(shift.entryTime.slice(0, 2));
+    const turno = Number.isFinite(startHour) && startHour >= 12
+      ? tr('Afternoon shift', 'Turno tarde')
+      : tr('Morning shift', 'Turno mañana');
+    return `${turno} · ${shift.entryTime} ${tr('to', 'a')} ${shift.exitTime}`;
+  })();
 
   // Calcular estadísticas del mes actual
   const currentMonth = new Date().getMonth();
@@ -927,8 +1025,12 @@ export default function Dashboard() {
     <SafeAreaView style={styles.wrapper} edges={['top']}>
       <View style={[styles.header, isDesktop && styles.desktopHeader, isDesktop && styles.desktopHeaderPanel]}>
         <View>
-          <Text style={[styles.greeting, isDesktop && styles.desktopGreeting]}>{tr('Hello', 'Hola')}, {fullName}</Text>
-          {cargo && <Text style={styles.roleTag}>{tr('Position', 'Cargo')}: {cargo}</Text>}
+          <Text style={[styles.greeting, isDesktop && styles.desktopGreeting]}>
+            {tr('Hello', 'Hola')}, {isDesktop ? fullName : String(fullName || '').trim().split(/\s+/)[0]}
+          </Text>
+          {isDesktop
+            ? (cargo ? <Text style={styles.roleTag}>{tr('Position', 'Cargo')}: {cargo}</Text> : null)
+            : <Text style={styles.headerDate}>{fecha}</Text>}
         </View>
 
         <View style={styles.menuArea}>
@@ -1192,124 +1294,161 @@ export default function Dashboard() {
           </View>
         ) : (
           <>
-            <View style={styles.statsSection}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <Text style={[styles.historyTitle, { marginBottom: 0 }]}>{tr('Monthly Summary', 'Resumen del Mes')}</Text>
-                {Platform.OS === 'web' && historyLogs.length > 0 && (
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <TouchableOpacity
-                      onPress={downloadExcel}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        backgroundColor: '#1B5E20',
-                        paddingHorizontal: 10,
-                        paddingVertical: 5,
-                        borderRadius: 6,
-                        gap: 4,
-                      }}
-                      activeOpacity={0.75}
-                    >
-                      <Ionicons name="document-text-outline" size={12} color="#A5D6A7" />
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#A5D6A7' }}>Excel</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={downloadPDF}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        backgroundColor: '#B71C1C',
-                        paddingHorizontal: 10,
-                        paddingVertical: 5,
-                        borderRadius: 6,
-                        gap: 4,
-                      }}
-                      activeOpacity={0.75}
-                    >
-                      <Ionicons name="document-outline" size={12} color="#EF9A9A" />
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#EF9A9A' }}>PDF</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+            {/* Tarjeta principal: estado del dia, reloj, turno y las dos formas de marcar */}
+            <View style={styles.heroCard}>
+              <View style={[
+                styles.statusPill,
+                completadoHoy ? styles.statusPillDone : tieneEntradaHoy ? styles.statusPillActive : styles.statusPillPending,
+              ]}>
+                <Ionicons
+                  name={completadoHoy ? 'checkmark-circle' : tieneEntradaHoy ? 'ellipse' : 'alert-circle'}
+                  size={12}
+                  color={completadoHoy ? '#86E5A8' : tieneEntradaHoy ? '#7EC3FF' : '#FFB86B'}
+                />
+                <Text style={[
+                  styles.statusPillText,
+                  completadoHoy ? styles.statusPillTextDone : tieneEntradaHoy ? styles.statusPillTextActive : styles.statusPillTextPending,
+                ]}>
+                  {completadoHoy
+                    ? tr('Day complete', 'Jornada completa')
+                    : tieneEntradaHoy
+                      ? tr('Shift in progress', 'Jornada en curso')
+                      : tr('Not clocked in today', 'Sin marcar hoy')}
+                </Text>
               </View>
-              <View style={styles.statsRow}>
-                <View style={styles.statCard}>
-                  <Ionicons name="time-outline" size={16} color="#208AEF" />
-                  <Text style={styles.statLabel}>{tr('Monthly Hours', 'Horas del Mes')}</Text>
-                  <Text style={styles.statValue}>{totalHours}h</Text>
-                </View>
 
-                <View style={styles.statCard}>
-                  <Ionicons name="calendar-outline" size={16} color="#66BB6A" />
-                  <Text style={styles.statLabel}>{tr('Attendances', 'Asistencias')}</Text>
-                  <Text style={[styles.statValue, styles.statValueGood]}>{asistencias}</Text>
-                </View>
-
-                <View style={styles.statCard}>
-                  <Ionicons name="warning-outline" size={16} color="#FFA726" />
-                  <Text style={styles.statLabel}>{tr('Late arrivals', 'Tardanzas')}</Text>
-                  <Text style={[styles.statValue, tardanzas > 0 && styles.statValueWarn]}>{tardanzas}</Text>
-                </View>
-
-                <View style={styles.statCard}>
-                  <Ionicons name="close-circle-outline" size={16} color="#EF5350" />
-                  <Text style={styles.statLabel}>{tr('Absences', 'Faltas')}</Text>
-                  <Text style={[styles.statValue, faltas > 0 && styles.statValueAbsent]}>{faltas}</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.clockCard}>
-              <Text style={styles.date}>{fecha}</Text>
-              <Text style={styles.clock}>{hora}</Text>
-
-              {faceEnrolled === false && (
-                <TouchableOpacity
-                  style={[styles.markButton, { backgroundColor: '#173A5E', marginBottom: 10 }, loading && styles.markButtonDisabled]}
-                  onPress={openEnrollmentFlow}
-                  disabled={loading}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.markButtonText}>{tr('Register my face', 'Registrar mi rostro')}</Text>
-                </TouchableOpacity>
-              )}
+              <Text style={styles.heroClock}>{hora}</Text>
+              {!!shiftLabel && <Text style={styles.heroShift}>{shiftLabel}</Text>}
 
               <TouchableOpacity
-                style={[styles.markButton, (loading || completadoHoy) && styles.markButtonDisabled]}
-                onPress={openCameraFlow}
+                style={[styles.primaryAction, (loading || completadoHoy) && styles.primaryActionDisabled]}
+                onPress={handleQuickMark}
                 disabled={loading || completadoHoy}
                 activeOpacity={0.85}
               >
-                <Text style={styles.markButtonText}>
+                <Text style={styles.primaryActionText}>
                   {loading
-                    ? 'Registrando...'
+                    ? tr('Registering...', 'Registrando...')
                     : completadoHoy
                       ? tr('Attendance completed today', 'Marcación completada hoy')
-                      : siguienteTipo === 'Entrada' ? tr('Clock in', 'Marcar Entrada') : tr('Clock out', 'Marcar Salida')}
+                      : siguienteTipo === 'Entrada'
+                        ? tr('Clock in', 'Marcar entrada')
+                        : tr('Clock out', 'Marcar salida')}
                 </Text>
               </TouchableOpacity>
+
+              {/* Cada camino se ofrece solo si el empleado puede usarlo */}
+              {faceEnrolled === true && !completadoHoy && (
+                <TouchableOpacity
+                  style={styles.secondaryAction}
+                  onPress={openCameraFlow}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="scan-outline" size={15} color="#7EC3FF" />
+                  <Text style={styles.secondaryActionText}>
+                    {tr('Verify with face recognition', 'Marcar con reconocimiento facial')}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {hasAttendancePin && !completadoHoy && (
+                <TouchableOpacity
+                  style={styles.secondaryAction}
+                  onPress={openPinPrompt}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="keypad-outline" size={15} color="#7EC3FF" />
+                  <Text style={styles.secondaryActionText}>
+                    {tr('Verify with my PIN', 'Marcar con mi PIN')}
+                  </Text>
+                </TouchableOpacity>
+              )}
 
               {message !== '' && <Text style={styles.message}>{message}</Text>}
             </View>
 
-            <View style={styles.historySection}>
-              <Text style={styles.historyTitle}>{tr("Today's history", 'Historial de hoy')}</Text>
+            {/* Alta facial pendiente: ya no bloquea el marcado, solo lo sugiere */}
+            {faceEnrolled === false && (
+              <TouchableOpacity
+                style={styles.enrollCard}
+                onPress={openEnrollmentFlow}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                <View style={styles.enrollIcon}>
+                  <Ionicons name="scan-outline" size={19} color="#FFB86B" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.enrollTitle}>{tr('Register your face', 'Registra tu rostro')}</Text>
+                  <Text style={styles.enrollSubtitle}>
+                    {tr('Pending · takes 30 seconds', 'Pendiente · toma 30 segundos')}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#6E8297" />
+              </TouchableOpacity>
+            )}
+
+            {/* Resumen del mes */}
+            <View style={styles.summarySection}>
+              <View style={styles.summaryHeader}>
+                <Text style={styles.sectionTitle}>
+                  {tr('Summary for', 'Resumen de')} {monthLabel}
+                </Text>
+                {Platform.OS === 'web' && historyLogs.length > 0 && (
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <TouchableOpacity onPress={downloadExcel} style={styles.exportChip} activeOpacity={0.75}>
+                      <Ionicons name="document-text-outline" size={12} color="#A5D6A7" />
+                      <Text style={[styles.exportChipText, { color: '#A5D6A7' }]}>Excel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={downloadPDF} style={styles.exportChip} activeOpacity={0.75}>
+                      <Ionicons name="document-outline" size={12} color="#EF9A9A" />
+                      <Text style={[styles.exportChipText, { color: '#EF9A9A' }]}>PDF</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.summaryRow}>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryValue}>
+                    {totalHours}<Text style={styles.summaryUnit}>h</Text>
+                  </Text>
+                  <Text style={styles.summaryLabel}>{tr('Hours', 'Horas')}</Text>
+                </View>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryValue}>{asistencias}</Text>
+                  <Text style={styles.summaryLabel}>{tr('Attendances', 'Asistencias')}</Text>
+                </View>
+                <View style={styles.summaryCard}>
+                  <Text style={[styles.summaryValue, tardanzas > 0 && styles.summaryValueWarn]}>{tardanzas}</Text>
+                  <Text style={styles.summaryLabel}>{tr('Late', 'Tardanzas')}</Text>
+                </View>
+                <View style={styles.summaryCard}>
+                  <Text style={[styles.summaryValue, faltas > 0 && styles.summaryValueBad]}>{faltas}</Text>
+                  <Text style={styles.summaryLabel}>{tr('Absences', 'Faltas')}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Hoy */}
+            <View style={styles.todaySection}>
+              <Text style={styles.sectionTitle}>{tr('Today', 'Hoy')}</Text>
 
               {hoyMarcaciones.length === 0 ? (
-                <View style={styles.emptyCard}>
-                  <Ionicons name="time-outline" size={22} color="#A0A5B1" />
-                  <Text style={styles.emptyText}>{tr('No attendance records yet today', 'Aún no hay marcaciones registradas hoy')}</Text>
+                <View style={styles.todayEmpty}>
+                  <Text style={styles.todayEmptyTitle}>
+                    {tr('You have not clocked in yet', 'Aún no marcas entrada')}
+                  </Text>
+                  <Text style={styles.todayEmptyHint}>
+                    {tr("Today's records will show up here", 'Tus marcaciones de hoy aparecerán aquí')}
+                  </Text>
                 </View>
               ) : (
                 [...hoyMarcaciones].reverse().map((m, index) => (
                   <View key={m.id || index} style={styles.historyItem}>
-                    <View
-                      style={[
-                        styles.historyDot,
-                        m.tipo === 'Entrada' ? styles.dotIn : styles.dotOut,
-                      ]}
-                    />
+                    <View style={[styles.historyDot, m.tipo === 'Entrada' ? styles.dotIn : styles.dotOut]} />
                     <View style={styles.historyInfo}>
                       <Text style={styles.historyType}>{m.tipo}</Text>
                       <Text style={styles.historyTime}>{m.hora}</Text>
@@ -1321,8 +1460,8 @@ export default function Dashboard() {
             </View>
 
             {workdayHistoryLogs.length > 0 && (
-              <View style={[styles.historySection, { marginTop: 24, marginBottom: 20 }]}>
-                <Text style={styles.historyTitle}>{tr('Recent History (Last days)', 'Historial Reciente (Últimos días)')}</Text>
+              <View style={[styles.todaySection, { marginBottom: 20 }]}>
+                <Text style={styles.sectionTitle}>{tr('Recent history', 'Historial reciente')}</Text>
 
                 {workdayHistoryLogs.slice(0, 5).map((log: any, idx: number) => {
                   const dateObj = parseAttendanceDate(log.date);
@@ -1352,7 +1491,7 @@ export default function Dashboard() {
                       </View>
                       <View style={styles.recentItemDetails}>
                         <Text style={styles.recentTimeText}>
-                          🚪 Ent: {formatLocalTimeFromUTC(log.clockIn, log.date)} | 🚪 Sal: {formatLocalTimeFromUTC(log.clockOut, log.date)}
+                          {formatLocalTimeFromUTC(log.clockIn, log.date)} → {formatLocalTimeFromUTC(log.clockOut, log.date)}
                         </Text>
                         <Text style={styles.recentHours}>{log.totalHours || '0h'}</Text>
                       </View>
@@ -1367,7 +1506,9 @@ export default function Dashboard() {
                     activeOpacity={0.8}
                   >
                     <Ionicons name="calendar-outline" size={16} color="#208AEF" />
-                    <Text style={styles.viewFullHistoryText}>Ver historial completo ({workdayHistoryLogs.length} registros)</Text>
+                    <Text style={styles.viewFullHistoryText}>
+                      {tr('View full history', 'Ver historial completo')} ({workdayHistoryLogs.length})
+                    </Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -1375,6 +1516,60 @@ export default function Dashboard() {
           </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={pinPromptVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPinPromptVisible(false)}
+      >
+        <View style={styles.pushPermissionOverlay}>
+          <View style={styles.pushPermissionCard}>
+            <View style={styles.pushPermissionIcon}>
+              <Ionicons name="keypad-outline" size={26} color="#7EC3FF" />
+            </View>
+            <Text style={styles.pushPermissionTitle}>
+              {tr('Enter your PIN', 'Ingresa tu PIN')}
+            </Text>
+            <Text style={styles.pushPermissionText}>
+              {siguienteTipo === 'Entrada'
+                ? tr('Confirm your clock in with your attendance PIN.', 'Confirma tu entrada con tu PIN de asistencia.')
+                : tr('Confirm your clock out with your attendance PIN.', 'Confirma tu salida con tu PIN de asistencia.')}
+            </Text>
+
+            <TextInput
+              value={pinValue}
+              onChangeText={(text: string) => setPinValue(text.replace(/[^0-9]/g, '').slice(0, 10))}
+              placeholder="••••••"
+              placeholderTextColor="#5B7391"
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={10}
+              autoFocus
+              style={styles.pinInput}
+              onSubmitEditing={confirmPinMark}
+            />
+
+            <TouchableOpacity
+              style={[styles.pushPermissionButton, pinValue.trim().length < 4 && styles.primaryActionDisabled]}
+              onPress={confirmPinMark}
+              disabled={pinValue.trim().length < 4}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.pushPermissionButtonText}>
+                {siguienteTipo === 'Entrada' ? tr('Clock in', 'Marcar entrada') : tr('Clock out', 'Marcar salida')}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setPinPromptVisible(false)}
+              style={styles.pushPermissionLater}
+            >
+              <Text style={styles.pushPermissionLaterText}>{tr('Cancel', 'Cancelar')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={showFullHistory} transparent animationType="slide">
         <View style={styles.fullHistoryOverlay}>

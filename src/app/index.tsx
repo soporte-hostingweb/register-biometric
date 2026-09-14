@@ -14,7 +14,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { API_URL, clearAuthSession, restoreSession, saveLoginSession } from '../services/api';
+import { API_URL, restoreSession, saveLoginSession } from '../services/api';
 import { completeDeviceAuthorization } from '../services/device-auth';
 import { useLanguage } from '../services/language';
 import { styles } from '../styles/login';
@@ -71,10 +71,10 @@ export default function LoginScreen() {
           },
         });
       } catch {
-        if (!cancelled) {
-          await clearAuthSession();
-          setCheckingSession(false);
-        }
+        // No se borra la sesion aqui. restoreSession ya distingue un rechazo del
+        // servidor de un fallo de red, asi que llegar a este catch es un error
+        // inesperado, y forzar el login por eso es justo lo que se quiere evitar.
+        if (!cancelled) setCheckingSession(false);
       }
     };
 
@@ -263,7 +263,7 @@ export default function LoginScreen() {
       ]}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
           <ActivityIndicator size="large" color="#7EC3FF" />
-          <Text style={{ color: '#D1DBEF' }}>{tr('Checking session...', 'Verificando sesión...')}</Text>
+          <Text style={{ color: '#D1DBEF' }}>{tr('Validating device...', 'Validando dispositivo...')}</Text>
         </View>
       </View>
     );
