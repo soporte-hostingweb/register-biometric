@@ -293,7 +293,7 @@ export default function LoginScreen() {
           <View style={[styles.card, isDesktop && styles.desktopCard]}>
             <View style={styles.hero}>
               <View style={styles.heroImageWrap}>
-                <Image source={require('../../assets/images/hwperu-icon-v4.png')} style={styles.heroImage} />
+                <Image source={require('../../assets/images/hwperu-icon-v5.png')} style={styles.heroImage} />
               </View>
             </View>
 
