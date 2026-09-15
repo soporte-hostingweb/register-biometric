@@ -8,7 +8,10 @@ export default function Root({ children }: PropsWithChildren) {
         <meta charSet="utf-8" />
         <title>HWPerú Asistencia</title>
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover"
+        />
         <meta name="theme-color" content="#051C33" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -23,6 +26,29 @@ export default function Root({ children }: PropsWithChildren) {
             __html: `
               window.__pwaInstallPrompt = null;
               window.__pwaUpdateAvailable = false;
+
+              // Safari ignora user-scalable=no desde iOS 10, asi que el pellizco hay
+              // que cancelarlo por eventos. Los "gesture*" son propios de Safari; el
+              // doble toque se detecta por el tiempo entre toques porque iOS no expone
+              // un evento para el. En Android basta el viewport y esto no le afecta.
+              (function blockZoomGestures() {
+                var cancel = function (event) { event.preventDefault(); };
+                document.addEventListener('gesturestart', cancel, { passive: false });
+                document.addEventListener('gesturechange', cancel, { passive: false });
+                document.addEventListener('gestureend', cancel, { passive: false });
+
+                var lastTouchEnd = 0;
+                document.addEventListener('touchend', function (event) {
+                  var now = Date.now();
+                  if (now - lastTouchEnd <= 300) event.preventDefault();
+                  lastTouchEnd = now;
+                }, { passive: false });
+
+                // Dos dedos a la vez sobre la pantalla solo pueden ser un pellizco.
+                document.addEventListener('touchmove', function (event) {
+                  if (event.touches.length > 1) event.preventDefault();
+                }, { passive: false });
+              })();
 
               function notifyUpdateAvailable() {
                 if (window.__pwaUpdateAvailable) return;
@@ -98,6 +124,33 @@ export default function Root({ children }: PropsWithChildren) {
                 width: 100%;
                 min-height: 100%;
                 background: #051C33;
+
+                /* Android infla por su cuenta el texto de bloques anchos; esto lo
+                   desactiva para que manden los tamaños que define la app. */
+                -webkit-text-size-adjust: 100%;
+                text-size-adjust: 100%;
+
+                /* Quita el retardo de 300ms y el zoom por doble toque. */
+                touch-action: manipulation;
+
+                /* Evita que el scroll encadene con el navegador anfitrión: sin esto,
+                   tirar hacia abajo dispara "recargar" en la PWA de Android. */
+                overscroll-behavior-y: contain;
+              }
+
+              /* La selección por pulsación larga estorba al tocar botones y no aporta
+                 nada en una app de fichaje. Los campos de entrada la conservan. */
+              body {
+                -webkit-user-select: none;
+                user-select: none;
+                -webkit-tap-highlight-color: transparent;
+              }
+
+              input, textarea {
+                -webkit-user-select: text;
+                user-select: text;
+                /* iOS hace zoom automático al enfocar un campo de menos de 16px. */
+                font-size: 16px;
               }
 
               #hwperu-boot-splash {
