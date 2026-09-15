@@ -18,9 +18,9 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="apple-mobile-web-app-title" content="HWPerú - Asistencia" />
         <meta name="description" content="Plataforma digital de asistencia HWPerú" />
         <link rel="manifest" href="/manifest.webmanifest" />
-        <link rel="icon" type="image/png" sizes="192x192" href="/icons/pwa-icon-v4-192.png" />
-        <link rel="shortcut icon" type="image/png" href="/icons/pwa-icon-v4-192.png" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-v4.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icons/pwa-icon-v5-192.png" />
+        <link rel="shortcut icon" type="image/png" href="/icons/pwa-icon-v5-192.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-v5.png" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -254,7 +254,7 @@ export default function Root({ children }: PropsWithChildren) {
       </head>
       <body>
         <div id="hwperu-boot-splash" aria-hidden="true">
-          <img src="/icons/hwperu-logo-v4.png" alt="" />
+          <img src="/icons/hwperu-splash-v5.png" alt="" />
         </div>
         {children}
       </body>
