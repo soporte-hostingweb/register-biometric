@@ -30,6 +30,17 @@ type PwaWindow = Window & {
   __pwaUpdateAvailable?: boolean;
 };
 
+// Tiempo mínimo que permanece la pantalla "Validando dispositivo...". La comprobación
+// real suele resolverse en milisegundos —si el token de acceso sigue vigente no hay ni
+// una llamada de red—, así que sin este mínimo el spinner parpadea y el usuario no
+// alcanza a ver que se validó nada.
+//
+// Solo se aplica cuando hay sesión válida y se va a entrar. Si no la hay, el formulario
+// de login aparece de inmediato: hacer esperar para pedir la contraseña sería absurdo.
+const MIN_SESSION_CHECK_MS = 5000;
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 function isIosBrowser() {
   if (typeof navigator === 'undefined') return false;
   return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
@@ -53,6 +64,8 @@ export default function LoginScreen() {
     let cancelled = false;
 
     const checkExistingSession = async () => {
+      const startedAt = Date.now();
+
       try {
         const session = await restoreSession();
         if (cancelled) return;
@@ -61,6 +74,14 @@ export default function LoginScreen() {
           setCheckingSession(false);
           return;
         }
+
+        // Se descuenta lo que ya tardó la comprobación: si la renovación tomó 800 ms,
+        // solo se esperan los 4200 ms que faltan, no 5000 más.
+        const elapsed = Date.now() - startedAt;
+        if (elapsed < MIN_SESSION_CHECK_MS) {
+          await wait(MIN_SESSION_CHECK_MS - elapsed);
+        }
+        if (cancelled) return;
 
         router.replace({
           pathname: '/dashboard',
