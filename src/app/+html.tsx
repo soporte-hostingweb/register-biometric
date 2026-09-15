@@ -168,13 +168,21 @@ export default function Root({ children }: PropsWithChildren) {
                 pointer-events: none;
               }
 
-              /* Logotipo horizontal (~3:1), no el monograma cuadrado anterior: por eso
-                 el ancho sube de 38vw a 64vw. El tope en px evita que se estire en
+              /* Logotipo horizontal (1200x381), no el monograma cuadrado anterior: por
+                 eso el ancho sube de 38vw a 64vw. El tope en px evita que se estire en
                  tablet, donde 64vw serían cientos de píxeles. */
               #hwperu-boot-splash img {
                 width: min(64vw, 280px);
                 height: auto;
                 object-fit: contain;
+
+                /* El archivo es un JPEG y los JPEG no admiten transparencia, así que
+                   trae un rectángulo negro sólido alrededor del texto. "screen" mezcla
+                   cada píxel con el fondo aclarándolo: el negro puro se vuelve
+                   invisible y el texto blanco se mantiene intacto. Es la forma de
+                   integrar arte blanco-sobre-negro sin reexportar el archivo. */
+                mix-blend-mode: screen;
+
                 animation: hwperuLogoIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
               }
 
@@ -258,7 +266,7 @@ export default function Root({ children }: PropsWithChildren) {
       </head>
       <body>
         <div id="hwperu-boot-splash" aria-hidden="true">
-          <img src="/icons/hwperu-wordmark-v5.png" alt="" />
+          <img src="/icons/hwperu-logo-actualizado.png" alt="" />
         </div>
         {children}
       </body>
