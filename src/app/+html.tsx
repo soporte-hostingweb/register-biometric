@@ -160,37 +160,25 @@ export default function Root({ children }: PropsWithChildren) {
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                /* Degradado muy sutil en lugar de un plano: da profundidad sin
-                   competir con el logotipo. Coincide con el background_color del
-                   manifest, así que no hay salto entre el splash del sistema y este. */
-                background: radial-gradient(120% 80% at 50% 45%, #0A2A45 0%, #051C33 62%);
-                animation: hwperuSplashOut 0.42s ease 1.05s forwards;
+                /* Exactamente el background_color del manifest. Un degradado, por sutil
+                   que fuera, delataba el corte: Android pinta su splash en color plano
+                   y al aparecer este se veía cambiar el fondo. */
+                background: #051C33;
+                animation: hwperuSplashOut 0.38s ease 0.75s forwards;
                 pointer-events: none;
               }
 
-              /* Logotipo horizontal (1200x381), no el monograma cuadrado anterior: por
-                 eso el ancho sube de 38vw a 64vw. El tope en px evita que se estire en
-                 tablet, donde 64vw serían cientos de píxeles. */
+              /* El mismo monograma, al mismo tamaño y en la misma posición que el splash
+                 que Android genera desde el manifest. El relevo entre uno y otro debe ser
+                 imperceptible. */
               #hwperu-boot-splash img {
-                width: min(64vw, 280px);
+                width: min(58vw, 250px);
                 height: auto;
                 object-fit: contain;
 
-                /* El archivo es un JPEG y los JPEG no admiten transparencia, así que
-                   trae un rectángulo negro sólido alrededor del texto. "screen" mezcla
-                   cada píxel con el fondo aclarándolo: el negro puro se vuelve
-                   invisible y el texto blanco se mantiene intacto. Es la forma de
-                   integrar arte blanco-sobre-negro sin reexportar el archivo. */
-                mix-blend-mode: screen;
-
-                animation: hwperuLogoIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
-              }
-
-              /* Entrada sobria: un texto que rebota se lee peor que uno que asienta.
-                 Sube unos píxeles y se estabiliza, sin el rebote del monograma. */
-              @keyframes hwperuLogoIn {
-                from { opacity: 0; transform: translateY(10px) scale(0.96); }
-                to { opacity: 1; transform: translateY(0) scale(1); }
+                /* Sin animación de entrada a propósito: el logo ya lleva un instante en
+                   pantalla, puesto ahí por el sistema. Cualquier aparición o escalado
+                   delataría que son dos pantallas distintas. */
               }
 
               @keyframes hwperuSplashOut {
@@ -266,7 +254,7 @@ export default function Root({ children }: PropsWithChildren) {
       </head>
       <body>
         <div id="hwperu-boot-splash" aria-hidden="true">
-          <img src="/icons/hwperu-logo-actualizado.png" alt="" />
+          <img src="/icons/hwperu-logo-v4.png" alt="" />
         </div>
         {children}
       </body>
