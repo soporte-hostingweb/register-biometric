@@ -160,21 +160,29 @@ export default function Root({ children }: PropsWithChildren) {
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                background: #051C33;
-                animation: hwperuSplashOut 0.36s ease 0.9s forwards;
+                /* Degradado muy sutil en lugar de un plano: da profundidad sin
+                   competir con el logotipo. Coincide con el background_color del
+                   manifest, así que no hay salto entre el splash del sistema y este. */
+                background: radial-gradient(120% 80% at 50% 45%, #0A2A45 0%, #051C33 62%);
+                animation: hwperuSplashOut 0.42s ease 1.05s forwards;
                 pointer-events: none;
               }
 
+              /* Logotipo horizontal (~3:1), no el monograma cuadrado anterior: por eso
+                 el ancho sube de 38vw a 64vw. El tope en px evita que se estire en
+                 tablet, donde 64vw serían cientos de píxeles. */
               #hwperu-boot-splash img {
-                width: min(38vw, 150px);
+                width: min(64vw, 280px);
                 height: auto;
                 object-fit: contain;
-                animation: hwperuLogoIn 0.48s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+                animation: hwperuLogoIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
               }
 
+              /* Entrada sobria: un texto que rebota se lee peor que uno que asienta.
+                 Sube unos píxeles y se estabiliza, sin el rebote del monograma. */
               @keyframes hwperuLogoIn {
-                from { opacity: 0; transform: scale(0.78); }
-                to { opacity: 1; transform: scale(1); }
+                from { opacity: 0; transform: translateY(10px) scale(0.96); }
+                to { opacity: 1; transform: translateY(0) scale(1); }
               }
 
               @keyframes hwperuSplashOut {
@@ -250,7 +258,7 @@ export default function Root({ children }: PropsWithChildren) {
       </head>
       <body>
         <div id="hwperu-boot-splash" aria-hidden="true">
-          <img src="/icons/hwperu-logo-v4.png" alt="" />
+          <img src="/icons/hwperu-wordmark-v5.png" alt="" />
         </div>
         {children}
       </body>

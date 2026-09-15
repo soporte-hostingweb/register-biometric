@@ -487,8 +487,8 @@ export default function Dashboard() {
 
   const confirmPinMark = () => {
     const pin = pinValue.trim();
-    if (!/^[0-9]{4,10}$/.test(pin)) {
-      setMessage(tr('The PIN must be 4 to 10 digits', 'El PIN debe tener entre 4 y 10 dígitos'));
+    if (!/^[0-9]{6}$/.test(pin)) {
+      setMessage(tr('The PIN must be exactly 6 digits', 'El PIN debe tener exactamente 6 dígitos'));
       return;
     }
     setPinPromptVisible(false);
@@ -1527,21 +1527,21 @@ export default function Dashboard() {
 
             <TextInput
               value={pinValue}
-              onChangeText={(text: string) => setPinValue(text.replace(/[^0-9]/g, '').slice(0, 10))}
+              onChangeText={(text: string) => setPinValue(text.replace(/[^0-9]/g, '').slice(0, 6))}
               placeholder="••••••"
               placeholderTextColor="#5B7391"
               keyboardType="number-pad"
               secureTextEntry
-              maxLength={10}
+              maxLength={6}
               autoFocus
               style={styles.pinInput}
               onSubmitEditing={confirmPinMark}
             />
 
             <TouchableOpacity
-              style={[styles.pushPermissionButton, pinValue.trim().length < 4 && styles.primaryActionDisabled]}
+              style={[styles.pushPermissionButton, pinValue.trim().length !== 6 && styles.primaryActionDisabled]}
               onPress={confirmPinMark}
-              disabled={pinValue.trim().length < 4}
+              disabled={pinValue.trim().length !== 6}
               activeOpacity={0.85}
             >
               <Text style={styles.pushPermissionButtonText}>
