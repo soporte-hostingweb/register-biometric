@@ -466,9 +466,18 @@ export default function Dashboard() {
   const handleMarcar = (photoDataUrl: string, faceDescriptor: number[]) =>
     submitAttendance({ kind: 'face', photoDataUrl, faceDescriptor });
 
+  // Marcar siempre pide el PIN. Un fichaje sin verificar no prueba nada: con la
+  // contraseña de acceso bastaría para registrar asistencia desde cualquier sitio.
   const openPinPrompt = () => {
     if (completadoHoy) {
       setMessage(tr('You already clocked in and out today', 'Ya registraste tu Entrada y Salida por el día de hoy'));
+      return;
+    }
+    if (!hasAttendancePin) {
+      setMessage(tr(
+        'You do not have an attendance PIN yet. Ask your administrator for one.',
+        'Todavía no tienes PIN de asistencia. Solicítalo a administración.',
+      ));
       return;
     }
     setPinValue('');
@@ -484,14 +493,6 @@ export default function Dashboard() {
     }
     setPinPromptVisible(false);
     submitAttendance({ kind: 'pin', pin });
-  };
-
-  const handleQuickMark = () => {
-    if (completadoHoy) {
-      setMessage(tr('You already clocked in and out today', 'Ya registraste tu Entrada y Salida por el día de hoy'));
-      return;
-    }
-    submitAttendance(null);
   };
 
   const openEnrollmentFlow = () => {
@@ -1322,7 +1323,7 @@ export default function Dashboard() {
 
               <TouchableOpacity
                 style={[styles.primaryAction, (loading || completadoHoy) && styles.primaryActionDisabled]}
-                onPress={handleQuickMark}
+                onPress={openPinPrompt}
                 disabled={loading || completadoHoy}
                 activeOpacity={0.85}
               >
@@ -1352,19 +1353,6 @@ export default function Dashboard() {
                 </TouchableOpacity>
               )}
 
-              {hasAttendancePin && !completadoHoy && (
-                <TouchableOpacity
-                  style={styles.secondaryAction}
-                  onPress={openPinPrompt}
-                  disabled={loading}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="keypad-outline" size={15} color="#7EC3FF" />
-                  <Text style={styles.secondaryActionText}>
-                    {tr('Verify with my PIN', 'Marcar con mi PIN')}
-                  </Text>
-                </TouchableOpacity>
-              )}
 
               {message !== '' && <Text style={styles.message}>{message}</Text>}
             </View>
