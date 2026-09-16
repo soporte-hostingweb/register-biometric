@@ -1533,6 +1533,11 @@ export default function Dashboard() {
               keyboardType="number-pad"
               secureTextEntry
               maxLength={6}
+              // Evita que el Gestor de contraseñas de Google lo tome por una
+              // contraseña y ofrezca guardarla o avise de filtraciones.
+              autoComplete="one-time-code"
+              textContentType="oneTimeCode"
+              importantForAutofill="no"
               autoFocus
               style={styles.pinInput}
               onSubmitEditing={confirmPinMark}

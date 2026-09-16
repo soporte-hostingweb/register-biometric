@@ -41,6 +41,7 @@ export default function PerfilScreen() {
   const [pinSubmitting, setPinSubmitting] = useState(false);
   const [pinMessage, setPinMessage] = useState('');
   const [pinOk, setPinOk] = useState(false);
+  const [showPin, setShowPin] = useState(false);
   const [passwordNoticeVisible, setPasswordNoticeVisible] = useState(false);
   const [dontShowPasswordNotice, setDontShowPasswordNotice] = useState(false);
   const [desktopMenuVisible, setDesktopMenuVisible] = useState(false);
@@ -333,11 +334,25 @@ export default function PerfilScreen() {
             placeholder="••••••"
             placeholderTextColor="#647A91"
             keyboardType="number-pad"
-            secureTextEntry
+            secureTextEntry={!showPin}
             maxLength={6}
+            // Sin esto el navegador trata el campo como contraseña: el Gestor de
+            // Google ofrece guardarla y la contrasta con su base de filtraciones.
+            // "one-time-code" le dice que es un código de un solo uso y lo ignora.
+            autoComplete="one-time-code"
+            textContentType="oneTimeCode"
+            importantForAutofill="no"
             style={styles.passwordInput}
             editable={!pinSubmitting}
           />
+          <TouchableOpacity
+            onPress={() => setShowPin(current => !current)}
+            accessibilityLabel={showPin ? tr('Hide PIN', 'Ocultar PIN') : tr('Show PIN', 'Mostrar PIN')}
+            disabled={pinSubmitting}
+            style={styles.passwordEyeButton}
+          >
+            <Ionicons name={showPin ? 'eye-off-outline' : 'eye-outline'} size={20} color="#8EABC6" />
+          </TouchableOpacity>
         </View>
 
         <Text style={styles.passwordLabel}>{tr('New PIN', 'Nuevo PIN')}</Text>
@@ -349,11 +364,25 @@ export default function PerfilScreen() {
             placeholder={tr('6 digits', '6 dígitos')}
             placeholderTextColor="#647A91"
             keyboardType="number-pad"
-            secureTextEntry
+            secureTextEntry={!showPin}
             maxLength={6}
+            // Sin esto el navegador trata el campo como contraseña: el Gestor de
+            // Google ofrece guardarla y la contrasta con su base de filtraciones.
+            // "one-time-code" le dice que es un código de un solo uso y lo ignora.
+            autoComplete="one-time-code"
+            textContentType="oneTimeCode"
+            importantForAutofill="no"
             style={styles.passwordInput}
             editable={!pinSubmitting}
           />
+          <TouchableOpacity
+            onPress={() => setShowPin(current => !current)}
+            accessibilityLabel={showPin ? tr('Hide PIN', 'Ocultar PIN') : tr('Show PIN', 'Mostrar PIN')}
+            disabled={pinSubmitting}
+            style={styles.passwordEyeButton}
+          >
+            <Ionicons name={showPin ? 'eye-off-outline' : 'eye-outline'} size={20} color="#8EABC6" />
+          </TouchableOpacity>
         </View>
 
         <Text style={styles.passwordLabel}>{tr('Confirm new PIN', 'Confirmar nuevo PIN')}</Text>
@@ -365,11 +394,25 @@ export default function PerfilScreen() {
             placeholder={tr('Repeat the new PIN', 'Repite el nuevo PIN')}
             placeholderTextColor="#647A91"
             keyboardType="number-pad"
-            secureTextEntry
+            secureTextEntry={!showPin}
             maxLength={6}
+            // Sin esto el navegador trata el campo como contraseña: el Gestor de
+            // Google ofrece guardarla y la contrasta con su base de filtraciones.
+            // "one-time-code" le dice que es un código de un solo uso y lo ignora.
+            autoComplete="one-time-code"
+            textContentType="oneTimeCode"
+            importantForAutofill="no"
             style={styles.passwordInput}
             editable={!pinSubmitting}
           />
+          <TouchableOpacity
+            onPress={() => setShowPin(current => !current)}
+            accessibilityLabel={showPin ? tr('Hide PIN', 'Ocultar PIN') : tr('Show PIN', 'Mostrar PIN')}
+            disabled={pinSubmitting}
+            style={styles.passwordEyeButton}
+          >
+            <Ionicons name={showPin ? 'eye-off-outline' : 'eye-outline'} size={20} color="#8EABC6" />
+          </TouchableOpacity>
         </View>
 
         {pinMessage ? (
