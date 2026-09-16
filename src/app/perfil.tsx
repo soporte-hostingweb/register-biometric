@@ -34,6 +34,13 @@ export default function PerfilScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [passwordError, setPasswordError] = useState('');
+  const [hasAttendancePin, setHasAttendancePin] = useState(false);
+  const [currentPin, setCurrentPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [pinSubmitting, setPinSubmitting] = useState(false);
+  const [pinMessage, setPinMessage] = useState('');
+  const [pinOk, setPinOk] = useState(false);
   const [passwordNoticeVisible, setPasswordNoticeVisible] = useState(false);
   const [dontShowPasswordNotice, setDontShowPasswordNotice] = useState(false);
   const [desktopMenuVisible, setDesktopMenuVisible] = useState(false);
@@ -107,6 +114,66 @@ export default function PerfilScreen() {
       setLoading(false);
     }
   }, [email]);
+
+  useEffect(() => {
+    // El backend nunca devuelve el PIN, solo si existe: está cifrado.
+    const loadPinStatus = async () => {
+      try {
+        const response = await apiFetch('/api/attendance/me/biometric-pin');
+        if (!response.ok) return;
+        const data = await response.json();
+        setHasAttendancePin(Boolean(data?.hasAttendancePin));
+      } catch {
+        // Sin respuesta simplemente no se ofrece el cambio.
+      }
+    };
+    loadPinStatus();
+  }, []);
+
+  const onlyDigits = (value: string) => value.replace(/[^0-9]/g, '').slice(0, 6);
+
+  const handleChangePin = async () => {
+    setPinMessage('');
+    setPinOk(false);
+
+    if (!/^[0-9]{6}$/.test(newPin)) {
+      setPinMessage(tr('The new PIN must be exactly 6 digits', 'El nuevo PIN debe tener exactamente 6 dígitos'));
+      return;
+    }
+    if (newPin !== confirmPin) {
+      setPinMessage(tr('The PINs do not match', 'Los PIN no coinciden'));
+      return;
+    }
+    if (newPin === currentPin) {
+      setPinMessage(tr('The new PIN must be different from the current one', 'El nuevo PIN debe ser distinto del actual'));
+      return;
+    }
+
+    setPinSubmitting(true);
+    try {
+      const response = await apiFetch('/api/attendance/me/biometric-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPin, newPin }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setPinMessage(data?.message || tr('The PIN could not be updated', 'No se pudo actualizar el PIN'));
+        return;
+      }
+
+      setPinOk(true);
+      setPinMessage(tr('PIN updated successfully', 'PIN actualizado correctamente'));
+      setCurrentPin('');
+      setNewPin('');
+      setConfirmPin('');
+    } catch {
+      setPinMessage(tr('Could not reach the server', 'No se pudo contactar con el servidor'));
+    } finally {
+      setPinSubmitting(false);
+    }
+  };
 
   const handlePickImage = async () => {
     try {
@@ -238,6 +305,95 @@ export default function PerfilScreen() {
       { icon: 'log-out-outline', color: '#EF5350', bg: 'rgba(239, 83, 80, 0.12)', label: tr('End time', 'Horario de salida'), value: empleado.exitTime || tr('Not specified', 'No definido') },
     ]
     : [];
+
+  const renderPinSection = (desktop = false) => {
+    // Sin PIN asignado no hay nada que cambiar: el alta la hace administración.
+    if (!hasAttendancePin) return null;
+
+    return (
+      <View style={[styles.securityCard, desktop && styles.desktopSecurityCard]}>
+        <View style={styles.securityHeader}>
+          <View style={styles.securityIcon}>
+            <Ionicons name="keypad-outline" size={24} color="#77C3FF" />
+          </View>
+          <View style={styles.securityHeaderText}>
+            <Text style={styles.securityTitle}>{tr('Change attendance PIN', 'Cambiar PIN de asistencia')}</Text>
+            <Text style={styles.securitySubtitle}>
+              {tr('The 6 digits you enter to clock in and out.', 'Los 6 dígitos que ingresas para marcar entrada y salida.')}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={styles.passwordLabel}>{tr('Current PIN', 'PIN actual')}</Text>
+        <View style={styles.passwordInputBox}>
+          <Ionicons name="lock-closed-outline" size={19} color="#7F9BB8" />
+          <TextInput
+            value={currentPin}
+            onChangeText={(text: string) => setCurrentPin(onlyDigits(text))}
+            placeholder="••••••"
+            placeholderTextColor="#647A91"
+            keyboardType="number-pad"
+            secureTextEntry
+            maxLength={6}
+            style={styles.passwordInput}
+            editable={!pinSubmitting}
+          />
+        </View>
+
+        <Text style={styles.passwordLabel}>{tr('New PIN', 'Nuevo PIN')}</Text>
+        <View style={styles.passwordInputBox}>
+          <Ionicons name="keypad-outline" size={19} color="#7F9BB8" />
+          <TextInput
+            value={newPin}
+            onChangeText={(text: string) => setNewPin(onlyDigits(text))}
+            placeholder={tr('6 digits', '6 dígitos')}
+            placeholderTextColor="#647A91"
+            keyboardType="number-pad"
+            secureTextEntry
+            maxLength={6}
+            style={styles.passwordInput}
+            editable={!pinSubmitting}
+          />
+        </View>
+
+        <Text style={styles.passwordLabel}>{tr('Confirm new PIN', 'Confirmar nuevo PIN')}</Text>
+        <View style={styles.passwordInputBox}>
+          <Ionicons name="keypad-outline" size={19} color="#7F9BB8" />
+          <TextInput
+            value={confirmPin}
+            onChangeText={(text: string) => setConfirmPin(onlyDigits(text))}
+            placeholder={tr('Repeat the new PIN', 'Repite el nuevo PIN')}
+            placeholderTextColor="#647A91"
+            keyboardType="number-pad"
+            secureTextEntry
+            maxLength={6}
+            style={styles.passwordInput}
+            editable={!pinSubmitting}
+          />
+        </View>
+
+        {pinMessage ? (
+          <Text style={[styles.passwordErrorText, pinOk && { color: '#6EDDA5' }]}>{pinMessage}</Text>
+        ) : null}
+
+        <TouchableOpacity
+          style={[styles.passwordButton, pinSubmitting && styles.passwordButtonDisabled]}
+          onPress={handleChangePin}
+          disabled={pinSubmitting}
+          activeOpacity={0.85}
+        >
+          {pinSubmitting ? (
+            <ActivityIndicator size="small" color="#04263F" />
+          ) : (
+            <Ionicons name="keypad-outline" size={20} color="#04263F" />
+          )}
+          <Text style={styles.passwordButtonText}>
+            {pinSubmitting ? tr('Updating…', 'Actualizando…') : tr('Change PIN', 'Cambiar PIN')}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const renderPasswordSection = (desktop = false) => (
     <View style={[styles.securityCard, desktop && styles.desktopSecurityCard]}>
@@ -467,6 +623,7 @@ export default function PerfilScreen() {
             )}
             {renderLanguageSection(true)}
             {renderPasswordSection(true)}
+            {renderPinSection(true)}
           </View>
         </View>
       ) : (
@@ -521,6 +678,7 @@ export default function PerfilScreen() {
               ))}
             {renderLanguageSection()}
             {renderPasswordSection()}
+            {renderPinSection()}
           </View>
         </ScrollView>
       )}
