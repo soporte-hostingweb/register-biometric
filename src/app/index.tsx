@@ -14,7 +14,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { API_URL, clearAuthSession, restoreSession, saveLoginSession } from '../services/api';
+import { API_URL, restoreSession, saveLoginSession } from '../services/api';
 import { completeDeviceAuthorization } from '../services/device-auth';
 import { useLanguage } from '../services/language';
 import { styles } from '../styles/login';
@@ -29,6 +29,17 @@ type PwaWindow = Window & {
   __applyPwaUpdate?: () => Promise<void>;
   __pwaUpdateAvailable?: boolean;
 };
+
+// Tiempo mínimo que permanece la pantalla "Validando dispositivo...". La comprobación
+// real suele resolverse en milisegundos —si el token de acceso sigue vigente no hay ni
+// una llamada de red—, así que sin este mínimo el spinner parpadea y el usuario no
+// alcanza a ver que se validó nada.
+//
+// Solo se aplica cuando hay sesión válida y se va a entrar. Si no la hay, el formulario
+// de login aparece de inmediato: hacer esperar para pedir la contraseña sería absurdo.
+const MIN_SESSION_CHECK_MS = 5000;
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function isIosBrowser() {
   if (typeof navigator === 'undefined') return false;
@@ -53,6 +64,8 @@ export default function LoginScreen() {
     let cancelled = false;
 
     const checkExistingSession = async () => {
+      const startedAt = Date.now();
+
       try {
         const session = await restoreSession();
         if (cancelled) return;
@@ -61,6 +74,14 @@ export default function LoginScreen() {
           setCheckingSession(false);
           return;
         }
+
+        // Se descuenta lo que ya tardó la comprobación: si la renovación tomó 800 ms,
+        // solo se esperan los 4200 ms que faltan, no 5000 más.
+        const elapsed = Date.now() - startedAt;
+        if (elapsed < MIN_SESSION_CHECK_MS) {
+          await wait(MIN_SESSION_CHECK_MS - elapsed);
+        }
+        if (cancelled) return;
 
         router.replace({
           pathname: '/dashboard',
@@ -71,10 +92,10 @@ export default function LoginScreen() {
           },
         });
       } catch {
-        if (!cancelled) {
-          await clearAuthSession();
-          setCheckingSession(false);
-        }
+        // No se borra la sesion aqui. restoreSession ya distingue un rechazo del
+        // servidor de un fallo de red, asi que llegar a este catch es un error
+        // inesperado, y forzar el login por eso es justo lo que se quiere evitar.
+        if (!cancelled) setCheckingSession(false);
       }
     };
 
@@ -263,7 +284,7 @@ export default function LoginScreen() {
       ]}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
           <ActivityIndicator size="large" color="#7EC3FF" />
-          <Text style={{ color: '#D1DBEF' }}>{tr('Checking session...', 'Verificando sesión...')}</Text>
+          <Text style={{ color: '#D1DBEF' }}>{tr('Validating device...', 'Validando dispositivo...')}</Text>
         </View>
       </View>
     );
@@ -293,7 +314,7 @@ export default function LoginScreen() {
           <View style={[styles.card, isDesktop && styles.desktopCard]}>
             <View style={styles.hero}>
               <View style={styles.heroImageWrap}>
-                <Image source={require('../../assets/images/hwperu-icon-v4.png')} style={styles.heroImage} />
+                <Image source={require('../../assets/images/hwperu-icon-v5.png')} style={styles.heroImage} />
               </View>
             </View>
 
