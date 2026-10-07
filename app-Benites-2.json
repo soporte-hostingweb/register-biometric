@@ -1,0 +1,58 @@
+﻿{
+  "expo": {
+    "name": "HWPerú - Asistencia",
+    "slug": "jose-benites",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/hwperu-icon-v5.png",
+    "scheme": "asistenciaapp",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.hwperu.asistencia",
+      "adaptiveIcon": {
+        "backgroundColor": "#051C33",
+        "foregroundImage": "./assets/images/hwperu-icon-v5.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/hwperu-favicon-v5.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#051C33",
+          "image": "./assets/images/hwperu-icon-v5.png",
+          "imageWidth": 160
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Permite el acceso a tu ubicación para registrar dónde marcaste tu asistencia."
+        }
+      ],
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "63269527-9ff3-4486-ac75-7a60fabce539"
+      }
+    },
+    "owner": "josebenitess-team"
+  }
+}

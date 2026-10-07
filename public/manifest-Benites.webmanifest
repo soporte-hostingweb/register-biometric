@@ -1,0 +1,41 @@
+{
+  "name": "HWPerú Asistencia",
+  "short_name": "HWPerú",
+  "description": "Registro web de asistencia para colaboradores de HWPerú",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone"],
+  "orientation": "portrait",
+  "background_color": "#051C33",
+  "theme_color": "#051C33",
+  "lang": "es-PE",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/icons/pwa-icon-v5-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/pwa-icon-v5-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/pwa-icon-v5-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/pwa-icon-v5-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

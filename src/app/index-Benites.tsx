@@ -1,0 +1,451 @@
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import {
+  Alert,
+  ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { API_URL, restoreSession, saveLoginSession } from '../services/api';
+import { completeDeviceAuthorization } from '../services/device-auth';
+import { useLanguage } from '../services/language';
+import { styles } from '../styles/login';
+
+type PwaInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
+
+type PwaWindow = Window & {
+  __pwaInstallPrompt?: PwaInstallPromptEvent | null;
+  __applyPwaUpdate?: () => Promise<void>;
+  __pwaUpdateAvailable?: boolean;
+};
+
+// Tiempo mínimo que permanece la pantalla "Validando dispositivo...". La comprobación
+// real suele resolverse en milisegundos —si el token de acceso sigue vigente no hay ni
+// una llamada de red—, así que sin este mínimo el spinner parpadea y el usuario no
+// alcanza a ver que se validó nada.
+//
+// Solo se aplica cuando hay sesión válida y se va a entrar. Si no la hay, el formulario
+// de login aparece de inmediato: hacer esperar para pedir la contraseña sería absurdo.
+const MIN_SESSION_CHECK_MS = 5000;
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isIosBrowser() {
+  if (typeof navigator === 'undefined') return false;
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+export default function LoginScreen() {
+  const { tr } = useLanguage();
+  const { width } = useWindowDimensions();
+  const isDesktop = Platform.OS === 'web' && width >= 900;
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showInstallButton, setShowInstallButton] = useState(false);
+  const [showUpdateBanner, setShowUpdateBanner] = useState(false);
+  const [focusedInput, setFocusedInput] = useState<'email' | 'password' | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkExistingSession = async () => {
+      const startedAt = Date.now();
+
+      try {
+        const session = await restoreSession();
+        if (cancelled) return;
+
+        if (!session.user?.email || !session.user.rol) {
+          setCheckingSession(false);
+          return;
+        }
+
+        // Se descuenta lo que ya tardó la comprobación: si la renovación tomó 800 ms,
+        // solo se esperan los 4200 ms que faltan, no 5000 más.
+        const elapsed = Date.now() - startedAt;
+        if (elapsed < MIN_SESSION_CHECK_MS) {
+          await wait(MIN_SESSION_CHECK_MS - elapsed);
+        }
+        if (cancelled) return;
+
+        router.replace({
+          pathname: '/dashboard',
+          params: {
+            fullName: session.user.fullName,
+            email: session.user.email,
+            rol: session.user.rol,
+          },
+        });
+      } catch {
+        // No se borra la sesion aqui. restoreSession ya distingue un rechazo del
+        // servidor de un fallo de red, asi que llegar a este catch es un error
+        // inesperado, y forzar el login por eso es justo lo que se quiere evitar.
+        if (!cancelled) setCheckingSession(false);
+      }
+    };
+
+    checkExistingSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+
+    if (isStandalone) return;
+
+    if (isIosBrowser()) {
+      setShowInstallButton(true);
+      return;
+    }
+
+    const updateInstallAvailability = () => {
+      const pwaWindow = window as PwaWindow;
+      setShowInstallButton(Boolean(pwaWindow.__pwaInstallPrompt));
+    };
+
+    const handleInstalled = () => setShowInstallButton(false);
+    updateInstallAvailability();
+    window.addEventListener('pwa-install-ready', updateInstallAvailability);
+    window.addEventListener('pwa-app-installed', handleInstalled);
+
+    return () => {
+      window.removeEventListener('pwa-install-ready', updateInstallAvailability);
+      window.removeEventListener('pwa-app-installed', handleInstalled);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    if ((window as PwaWindow).__pwaUpdateAvailable) setShowUpdateBanner(true);
+    const handleUpdateAvailable = () => setShowUpdateBanner(true);
+    window.addEventListener('pwa-update-available', handleUpdateAvailable);
+    return () => window.removeEventListener('pwa-update-available', handleUpdateAvailable);
+  }, []);
+
+  const handleUpdateNow = async () => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const applyUpdate = (window as PwaWindow).__applyPwaUpdate;
+    if (applyUpdate) await applyUpdate();
+    else window.location.reload();
+  };
+
+  const handleInstall = async () => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    const pwaWindow = window as PwaWindow;
+    const installPrompt = pwaWindow.__pwaInstallPrompt;
+
+    if (isIosBrowser()) {
+      window.alert(
+        'Para instalar HWPerú en iPhone: abre esta página en Safari, pulsa Compartir y selecciona “Añadir a pantalla de inicio”. Luego abre HWPerú desde el nuevo icono.',
+      );
+      return;
+    }
+
+    if (!installPrompt) {
+      window.alert(
+        'El instalador todavía no está disponible. Actualiza esta página y vuelve a pulsar el botón. Si continúa igual, elimina el acceso directo anterior y borra los datos de developer.hwperu.com en Brave.',
+      );
+      return;
+    }
+
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    pwaWindow.__pwaInstallPrompt = null;
+
+    if (choice.outcome === 'accepted') {
+      setShowInstallButton(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    const showAlert = (title: string, message: string) => {
+      if (Platform.OS === 'web') {
+        alert(`${title}: ${message}`);
+      } else {
+        Alert.alert(title, message);
+      }
+    };
+
+    if (!email || !password) {
+      showAlert('Error', tr('Please complete all fields', 'Completa todos los campos'));
+      return;
+    }
+
+    setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+    try {
+      const response = await fetch(`${API_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, app: 'asistencia' }),
+        signal: controller.signal,
+        credentials: 'include',
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.status === 403) {
+        const errData = await response.json().catch(() => ({}));
+        showAlert(
+          'Access denied',
+          errData.message || 'Your IP is not authorized. Connect from office Wi-Fi.',
+        );
+        setLoading(false);
+        return;
+      }
+
+      let data = await response.json();
+
+      if (data.success) {
+        if (data.deviceRegistrationRequired || data.deviceAuthenticationRequired) {
+          data = await completeDeviceAuthorization(data);
+        }
+
+        if (!data.user?.token) {
+          showAlert('Error', 'Server did not return access token');
+          setLoading(false);
+          return;
+        }
+
+        if (
+          typeof data.user.email !== 'string' ||
+          typeof data.user.fullName !== 'string' ||
+          typeof data.user.rol !== 'string'
+        ) {
+          showAlert('Error', 'Server response does not include valid user data');
+          setLoading(false);
+          return;
+        }
+
+        await saveLoginSession({
+          email: data.user.email,
+          fullName: data.user.fullName,
+          rol: data.user.rol,
+        }, data.user.token);
+
+        router.push({
+          pathname: '/dashboard',
+          params: {
+            fullName: data.user.fullName,
+            email: data.user.email,
+            rol: data.user.rol,
+          },
+        });
+      } else {
+        showAlert('Error', data.message || 'Invalid credentials');
+      }
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        showAlert(
+          'Request timeout',
+          'Unable to connect to the server. Check your office Wi-Fi or data signal.',
+        );
+      } else {
+        showAlert('Error', error.message || 'Could not connect to the server. Verify internet connection.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (checkingSession) {
+    return (
+      <View style={[
+        styles.wrapper,
+        Platform.OS === 'web' && styles.webBackground,
+        isDesktop && styles.desktopWrapper,
+      ]}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+          <ActivityIndicator size="large" color="#7EC3FF" />
+          <Text style={{ color: '#D1DBEF' }}>{tr('Validating device...', 'Validando dispositivo...')}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.wrapper,
+        Platform.OS === 'web' && styles.webBackground,
+        isDesktop && styles.desktopWrapper,
+      ]}
+    >
+      <View
+        pointerEvents="none"
+        style={[styles.ambientGlow, Platform.OS === 'web' && styles.webAmbientGlow]}
+      />
+      <KeyboardAvoidingView
+        style={styles.contentOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, isDesktop && styles.desktopScrollContent]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[styles.card, isDesktop && styles.desktopCard]}>
+            <View style={styles.hero}>
+              <View style={styles.heroImageWrap}>
+                <Image source={require('../../assets/images/hwperu-icon-v5.png')} style={styles.heroImage} />
+              </View>
+            </View>
+
+            <Text style={[styles.title, isDesktop && styles.desktopTitle]}>{tr('Welcome to HWPerú', 'Bienvenido a HWPerú')}</Text>
+            <Text style={styles.subtitle}>{tr('Digital Attendance Platform', 'Plataforma Digital de Asistencia')}</Text>
+
+            <View style={styles.divider} />
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>{tr('Email address', 'Correo electrónico')}</Text>
+              <View
+                nativeID="login-email-field"
+                style={[
+                  styles.fieldWrapper,
+                  focusedInput === 'email' && styles.fieldWrapperFocus,
+                ]}
+              >
+                <Ionicons
+                  name="mail-outline"
+                  size={18}
+                  color={focusedInput === 'email' ? '#7EC3FF' : '#C6D8F5'}
+                  style={styles.fieldIcon}
+                />
+                <TextInput
+                  nativeID="login-email-input"
+                  style={styles.input}
+                  placeholder="you@company.com"
+                  placeholderTextColor="#D1DBEF"
+                  autoComplete="email"
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                  onFocus={() => setFocusedInput('email')}
+                  onBlur={() => setFocusedInput((current) => (current === 'email' ? null : current))}
+                  selectionColor="#005FF7"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>{tr('Password', 'Contraseña')}</Text>
+              <View
+                nativeID="login-password-field"
+                style={[
+                  styles.passwordWrapper,
+                  focusedInput === 'password' && styles.fieldWrapperFocus,
+                ]}
+              >
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={18}
+                  color={focusedInput === 'password' ? '#7EC3FF' : '#C6D8F5'}
+                  style={styles.fieldIcon}
+                />
+                <TextInput
+                  nativeID="login-password-input"
+                  style={styles.passwordInput}
+                  placeholder={tr('Enter your password', 'Ingresa tu contraseña')}
+                  placeholderTextColor="#D1DBEF"
+                  autoComplete="current-password"
+                  value={password}
+                  onChangeText={setPassword}
+                  textContentType="password"
+                  secureTextEntry={!showPassword}
+                  onFocus={() => setFocusedInput('password')}
+                  onBlur={() =>
+                    setFocusedInput((current) => (current === 'password' ? null : current))
+                  }
+                  selectionColor="#005FF7"
+                />
+                <TouchableOpacity
+                  style={styles.eyeButton}
+                  onPress={() => setShowPassword(!showPassword)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color={focusedInput === 'password' ? '#7EC3FF' : '#C6D8F5'}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.buttonText}>{loading ? tr('Signing in...', 'Iniciando sesión...') : tr('Sign In', 'Iniciar sesión')}</Text>
+            </TouchableOpacity>
+
+            {showInstallButton && (
+              <TouchableOpacity
+                style={styles.installButton}
+                onPress={handleInstall}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Instalar aplicación HWPerú"
+              >
+                <Ionicons name="download-outline" size={19} color="#D9ECFF" />
+                <Text style={styles.installButtonText}>{tr('Install application', 'Instalar aplicación')}</Text>
+              </TouchableOpacity>
+            )}
+
+            {showUpdateBanner && (
+              <View style={styles.updateBanner} accessibilityRole="alert">
+                <View style={styles.updateCopy}>
+                  <Ionicons name="sparkles-outline" size={18} color="#7EC3FF" />
+                  <Text style={styles.updateText}>
+                    {tr('A new version is available', 'Nueva versión disponible')}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.updateButton}
+                  onPress={handleUpdateNow}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.updateButtonText}>
+                    {tr('Update now', 'Actualizar ahora')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}

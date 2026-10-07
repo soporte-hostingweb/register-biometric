@@ -17,7 +17,19 @@ const types = [
   ['OTHER', 'Otro permiso', 'Other permission'],
 ];
 
+/*
+ * Que clase de solicitud se esta pidiendo. Es el primer selector de la
+ * pantalla, y lo que decide que campos se muestran debajo.
+ *
+ * Las vacaciones viajan como un permiso de tipo VACATION por el mismo endpoint
+ * que los demas: comparten la revision, el historial y el aviso a
+ * administracion. Lo unico que cambia es que el gestor las enruta a su seccion
+ * de Vacaciones en vez de mezclarlas con las citas medicas.
+ */
+const VACATION = 'VACATION';
+
 const typeLabel = (value: string, tr: (english: string, spanish: string) => string) => {
+  if (value === VACATION) return tr('Vacation', 'Vacaciones');
   const found = types.find(([id]) => id === value);
   return found ? tr(found[2], found[1]) : value;
 };
@@ -34,21 +46,38 @@ export default function PermissionsScreen() {
   const [items, setItems] = useState<any[]>([]), [type, setType] = useState(''), [date, setDate] = useState(''), [endDate, setEndDate] = useState('');
   const [startTime, setStartTime] = useState(''), [endTime, setEndTime] = useState(''), [reason, setReason] = useState('');
   const [attachment, setAttachment] = useState<any>(null), [message, setMessage] = useState(''), [saving, setSaving] = useState(false);
+  // '' = nada elegido todavia, que es como entra la pantalla.
+  const [family, setFamily] = useState<'' | 'PERMISSION' | 'VACATION'>('');
 
   const load = async () => { const res = await apiFetch('/api/attendance/permissions/me'); if (res.ok) setItems(await res.json()); };
   useEffect(() => { load(); }, []);
   const resetFields = (nextType: string) => { setType(nextType); setDate(''); setEndDate(''); setStartTime(''); setEndTime(''); setReason(''); setMessage(''); };
+  // Cambiar de familia limpia el formulario entero. Dejar escrita la fecha de
+  // un permiso al pasar a vacaciones es justo como se mandan solicitudes que
+  // nadie queria mandar.
+  const changeFamily = (next: '' | 'PERMISSION' | 'VACATION') => { setFamily(next); resetFields(next === 'VACATION' ? VACATION : ''); setAttachment(null); };
   const pickFile = () => { if (Platform.OS !== 'web') return; const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/pdf,image/jpeg,image/png'; input.onchange = () => { const file = input.files?.[0]; if (!file) return; if (file.size > 450 * 1024) { setMessage('El sustento no puede superar 450 KB.'); return; } const reader = new FileReader(); reader.onload = () => setAttachment({ name: file.name, data: reader.result }); reader.readAsDataURL(file); }; input.click(); };
 
   const submit = async () => {
-    if (!type) { setMessage('Selecciona el tipo de permiso.'); return; }
-    if (!date) { setMessage('Selecciona la fecha del permiso.'); return; }
-    if (isRange(type) && (!endDate || endDate < date)) { setMessage('Selecciona una fecha final válida.'); return; }
-    if (isSingleTime(type) && !startTime) { setMessage('Selecciona la hora autorizada.'); return; }
-    if (isTimeRange(type) && (!startTime || !endTime || endTime <= startTime)) { setMessage('Selecciona una hora de inicio y fin válida.'); return; }
-    if (reason.trim().length < 5) { setMessage('Escribe el motivo del permiso.'); return; }
+    const vacation = family === 'VACATION';
+    if (!family) { setMessage('Selecciona qué quieres solicitar.'); return; }
+    if (!vacation && !type) { setMessage('Selecciona el tipo de permiso.'); return; }
+    if (!date) { setMessage(vacation ? 'Selecciona la fecha de inicio.' : 'Selecciona la fecha del permiso.'); return; }
+    if (vacation && (!endDate || endDate < date)) { setMessage('Selecciona una fecha de fin válida.'); return; }
+    if (!vacation) {
+      if (isRange(type) && (!endDate || endDate < date)) { setMessage('Selecciona una fecha final válida.'); return; }
+      if (isSingleTime(type) && !startTime) { setMessage('Selecciona la hora autorizada.'); return; }
+      if (isTimeRange(type) && (!startTime || !endTime || endTime <= startTime)) { setMessage('Selecciona una hora de inicio y fin válida.'); return; }
+      if (reason.trim().length < 5) { setMessage('Escribe el motivo del permiso.'); return; }
+    }
+    /*
+     * En vacaciones las observaciones son opcionales: no hay nada que
+     * justificar, es un derecho. Si se dejan en blanco se manda 'Vacaciones',
+     * que ademas es lo que vera administracion en la lista.
+     */
+    const finalReason = vacation ? (reason.trim() || 'Vacaciones') : reason.trim();
     setSaving(true); setMessage('');
-    try { const res = await apiFetch('/api/attendance/permissions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permissionType: type, permissionDate: date, permissionEndDate: endDate || date, startTime: startTime || null, endTime: endTime || null, authorizedExitTime: startTime || '00:00', reason: reason.trim(), attachment }) }); const data = await res.json(); setMessage(data.message || (res.ok ? 'Solicitud enviada.' : 'No se pudo enviar.')); if (res.ok) { resetFields(''); setAttachment(null); await load(); } } finally { setSaving(false); }
+    try { const res = await apiFetch('/api/attendance/permissions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permissionType: vacation ? VACATION : type, permissionDate: date, permissionEndDate: endDate || date, startTime: vacation ? null : (startTime || null), endTime: vacation ? null : (endTime || null), authorizedExitTime: vacation ? '00:00' : (startTime || '00:00'), reason: finalReason, attachment: vacation ? null : attachment }) }); const data = await res.json(); setMessage(data.message || (res.ok ? 'Solicitud enviada.' : 'No se pudo enviar.')); if (res.ok) { changeFamily(''); await load(); } } finally { setSaving(false); }
   };
   const cancel = async (id: number) => { const res = await apiFetch(`/api/attendance/permissions/${id}/cancel`, { method: 'POST' }); if (res.ok) await load(); };
   const statusLabel: any = { PENDING: 'Pendiente', APPROVED: 'Aprobado', REJECTED: 'Rechazado', CANCELLED: 'Cancelado' };
@@ -56,14 +85,42 @@ export default function PermissionsScreen() {
   const TimeField = ({ value, onChange }: { value: string, onChange: (value: string) => void }) => Platform.OS === 'web' ? <input type="time" value={value} onChange={e => onChange(e.currentTarget.value)} style={webInputStyle} /> : <TextInput value={value} onChangeText={onChange} placeholder="HH:mm" placeholderTextColor="#6E8297" style={s.input} />;
 
   return <SafeAreaView style={s.page}>
-    <View style={s.header}><TouchableOpacity onPress={() => router.back()} style={s.back}><Ionicons name="arrow-back" size={24} color="#7BC3FF" /></TouchableOpacity><View style={{ flex: 1 }}><Text style={s.eyebrow}>{tr('ATTENDANCE', 'ASISTENCIA')}</Text><Text style={s.title}>{tr('Permissions and absences', 'Permisos y ausencias')}</Text><Text style={s.subtitle}>{String(params.fullName || '')}</Text></View></View>
+    <View style={s.header}><TouchableOpacity onPress={() => router.back()} style={s.back}><Ionicons name="arrow-back" size={24} color="#7BC3FF" /></TouchableOpacity><View style={{ flex: 1 }}><Text style={s.eyebrow}>{tr('ATTENDANCE', 'ASISTENCIA')}</Text><Text style={s.title}>{tr('My requests', 'Mis solicitudes')}</Text><Text style={s.subtitle}>{String(params.fullName || '')}</Text></View></View>
     <ScrollView contentContainerStyle={s.content}>
       <View style={s.card}>
-        <Text style={s.cardTitle}>{tr('Request permission', 'Solicitar permiso')}</Text>
-        <Text style={s.help}>{tr('First select the permission type. Only the required fields will be displayed.', 'Primero selecciona el tipo de permiso. Solo se mostrarán los campos necesarios.')}</Text>
-        <Text style={s.label}>{tr('Permission type', 'Tipo de permiso')}</Text>
-        {Platform.OS === 'web' ? <select value={type} onChange={e => resetFields(e.currentTarget.value)} style={webInputStyle}><option value="">Selecciona un tipo de permiso</option>{types.map(([id, es, en]) => <option key={id} value={id}>{tr(en, es)}</option>)}</select> : <View style={s.types}>{types.map(([id, es, en]) => <TouchableOpacity key={id} onPress={() => resetFields(id)} style={[s.typeBtn, type === id && s.typeActive]}><Text style={[s.typeText, type === id && s.typeTextActive]}>{tr(en, es)}</Text></TouchableOpacity>)}</View>}
-        {!!type && <>
+        <Text style={s.cardTitle}>{tr('New request', 'Nueva solicitud')}</Text>
+        <Text style={s.help}>{tr('First choose what you want to request. Only the required fields will be displayed.', 'Primero elige qué quieres solicitar. Solo se mostrarán los campos necesarios.')}</Text>
+        <Text style={s.label}>{tr('Request type', 'Tipo de solicitud')}</Text>
+        {Platform.OS === 'web'
+          ? <select value={family} onChange={e => changeFamily(e.currentTarget.value as any)} style={webInputStyle}>
+              <option value="">{tr('Select a request', 'Seleccionar una solicitud')}</option>
+              <option value="PERMISSION">{tr('Permission', 'Permiso')}</option>
+              <option value="VACATION">{tr('Vacation', 'Vacaciones')}</option>
+            </select>
+          : <View style={s.types}>
+              {[['PERMISSION', 'Permiso', 'Permission'], ['VACATION', 'Vacaciones', 'Vacation']].map(([id, es, en]) =>
+                <TouchableOpacity key={id} onPress={() => changeFamily(id as any)} style={[s.typeBtn, family === id && s.typeActive]}>
+                  <Text style={[s.typeText, family === id && s.typeTextActive]}>{tr(en, es)}</Text>
+                </TouchableOpacity>)}
+            </View>}
+
+        {family === 'PERMISSION' && <>
+          <Text style={s.label}>{tr('Permission type', 'Tipo de permiso')}</Text>
+          {Platform.OS === 'web' ? <select value={type} onChange={e => resetFields(e.currentTarget.value)} style={webInputStyle}><option value="">Selecciona un tipo de permiso</option>{types.map(([id, es, en]) => <option key={id} value={id}>{tr(en, es)}</option>)}</select> : <View style={s.types}>{types.map(([id, es, en]) => <TouchableOpacity key={id} onPress={() => resetFields(id)} style={[s.typeBtn, type === id && s.typeActive]}><Text style={[s.typeText, type === id && s.typeTextActive]}>{tr(en, es)}</Text></TouchableOpacity>)}</View>}
+        </>}
+
+        {/* Vacaciones: fechas y observaciones, nada mas. No hay hora que
+            autorizar ni sustento que adjuntar. */}
+        {family === 'VACATION' && <>
+          <Text style={s.label}>{tr('Start date', 'Fecha de inicio')}</Text><DateField value={date} onChange={setDate} min={todayLocal()} />
+          <Text style={s.label}>{tr('End date', 'Fecha de fin')}</Text><DateField value={endDate} onChange={setEndDate} min={date || todayLocal()} />
+          <Text style={s.label}>{tr('Notes (optional)', 'Observaciones (opcional)')}</Text>
+          <TextInput value={reason} onChangeText={setReason} multiline placeholder={tr('Anything administration should know', 'Algo que administración deba saber')} placeholderTextColor="#6E8297" style={[s.input, s.area]} />
+          {!!message && <Text style={s.message}>{message}</Text>}
+          <TouchableOpacity disabled={saving} onPress={submit} style={[s.submit, saving && { opacity: .6 }]}><Text style={s.submitText}>{saving ? tr('Sending...', 'Enviando...') : tr('Send request', 'Enviar solicitud')}</Text></TouchableOpacity>
+        </>}
+
+        {family === 'PERMISSION' && !!type && <>
           <Text style={s.label}>{isRange(type) ? tr('Start date', 'Fecha de inicio') : tr('Date', 'Fecha')}</Text><DateField value={date} onChange={setDate} min={todayLocal()} />
           {isRange(type) && <><Text style={s.label}>{tr('End date', 'Fecha final')}</Text><DateField value={endDate} onChange={setEndDate} min={date || todayLocal()} /></>}
           {isSingleTime(type) && <><Text style={s.label}>{type === 'EARLY_DEPARTURE' ? tr('Authorized departure time', 'Hora autorizada de salida') : tr('Authorized arrival time', 'Hora autorizada de ingreso')}</Text><TimeField value={startTime} onChange={setStartTime} /></>}
@@ -74,7 +131,7 @@ export default function PermissionsScreen() {
           <TouchableOpacity disabled={saving} onPress={submit} style={[s.submit, saving && { opacity: .6 }]}><Text style={s.submitText}>{saving ? tr('Sending...', 'Enviando...') : tr('Send to administration', 'Enviar a administración')}</Text></TouchableOpacity>
         </>}
       </View>
-      <Text style={s.section}>{tr('My requests', 'Mis solicitudes')}</Text>
+      <Text style={s.section}>{tr('History', 'Historial')}</Text>
       {items.map(item => <View key={item.id} style={s.item}><View style={s.itemTop}><View style={{ flex: 1 }}><Text style={s.itemDate}>{typeLabel(item.permissionType, tr)}</Text><Text style={s.itemMeta}>{item.permissionDate}{item.permissionEndDate && item.permissionEndDate !== item.permissionDate ? ` → ${item.permissionEndDate}` : ''}{item.startTime ? ` · ${item.startTime}${item.endTime ? `–${item.endTime}` : ''}` : ''}</Text></View><Text style={[s.badge, { color: item.status === 'APPROVED' ? '#4ADE80' : item.status === 'REJECTED' ? '#FB7185' : '#FBBF24' }]}>{statusLabel[item.status] || item.status}</Text></View><Text style={s.itemReason}>{item.reason}</Text>{item.reviewComment && <Text style={s.review}>Administración: {item.reviewComment}</Text>}{item.status === 'PENDING' && <TouchableOpacity onPress={() => cancel(item.id)}><Text style={s.cancel}>Cancelar solicitud</Text></TouchableOpacity>}</View>)}
       {!items.length && <Text style={s.empty}>{tr("You don't have any requests yet.", 'Aún no tienes solicitudes.')}</Text>}
     </ScrollView>
