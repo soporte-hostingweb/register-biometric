@@ -36,12 +36,38 @@ const typeLabel = (value: string, tr: (english: string, spanish: string) => stri
 
 const webInputStyle: any = { width: '100%', boxSizing: 'border-box', backgroundColor: '#071B2D', border: '1px solid #315572', borderRadius: 11, padding: 13, color: '#FFFFFF', colorScheme: 'dark', fontSize: 16, fontFamily: 'inherit' };
 const todayLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+/*
+ * Dias calendario y dias habiles de un rango.
+ *
+ * La regla es la MISMA que la del modal de vacaciones de la web: habiles son
+ * de lunes a viernes, y NO se descuentan feriados porque el sistema todavia no
+ * tiene calendario de feriados. Si aqui se contara distinto, el trabajador
+ * veria un numero en el movil y administracion otro en el gestor para el mismo
+ * descanso, y no habria forma de saber cual manda.
+ */
+const contarDias = (desde: string, hasta: string) => {
+  if (!desde || !hasta) return null;
+  const inicio = new Date(`${desde}T00:00:00`);
+  const fin = new Date(`${hasta}T00:00:00`);
+  if (!Number.isFinite(inicio.getTime()) || !Number.isFinite(fin.getTime()) || inicio > fin) return null;
+
+  const calendario = Math.round((fin.getTime() - inicio.getTime()) / 86400000) + 1;
+  let habiles = 0;
+  for (const dia = new Date(inicio); dia <= fin; dia.setDate(dia.getDate() + 1)) {
+    const semana = dia.getDay();
+    if (semana !== 0 && semana !== 6) habiles++;
+  }
+  return { calendario, habiles };
+};
+
 const isRange = (type: string) => ['DATE_RANGE_ABSENCE', 'WORK_COMMISSION'].includes(type);
 const isSingleTime = (type: string) => ['EARLY_DEPARTURE', 'LATE_ARRIVAL'].includes(type);
 const isTimeRange = (type: string) => ['HOURLY_PERMISSION', 'MEDICAL_APPOINTMENT', 'OTHER'].includes(type);
 
 export default function PermissionsScreen() {
   const { tr } = useLanguage();
+  // Plegado por defecto: a esta pantalla se entra a PEDIR, no a repasar.
+  const [verHistorial, setVerHistorial] = useState(false);
   const params = useLocalSearchParams();
   const [items, setItems] = useState<any[]>([]), [type, setType] = useState(''), [date, setDate] = useState(''), [endDate, setEndDate] = useState('');
   const [startTime, setStartTime] = useState(''), [endTime, setEndTime] = useState(''), [reason, setReason] = useState('');
@@ -113,7 +139,29 @@ export default function PermissionsScreen() {
             autorizar ni sustento que adjuntar. */}
         {family === 'VACATION' && <>
           <Text style={s.label}>{tr('Start date', 'Fecha de inicio')}</Text><DateField value={date} onChange={setDate} min={todayLocal()} />
+          <Text style={s.hint}>{tr('The first day you will NOT come to work.', 'El primer día en que NO asistirás a laborar.')}</Text>
           <Text style={s.label}>{tr('End date', 'Fecha de fin')}</Text><DateField value={endDate} onChange={setEndDate} min={date || todayLocal()} />
+          <Text style={s.hint}>{tr('The last day of the vacation period.', 'El último día del período de vacaciones.')}</Text>
+
+          {/* El resumen del periodo, en vivo. Es el mismo que ve administracion
+              en el gestor: asi nadie cuenta dias a mano ni se encuentra con
+              otro numero al otro lado. */}
+          {(() => {
+            const dias = contarDias(date, endDate);
+            if (!dias) return null;
+            return <View style={s.resumen}>
+              <Text style={s.resumenTitulo}>{tr('PERIOD SUMMARY', 'RESUMEN DEL PERÍODO')}</Text>
+              <View style={s.resumenFila}>
+                <Text style={s.resumenEtiqueta}>{tr('Calendar days', 'Días Calendario')}</Text>
+                <Text style={s.resumenValor}>{dias.calendario}</Text>
+              </View>
+              <View style={s.resumenFila}>
+                <Text style={s.resumenEtiqueta}>{tr('Working days', 'Días Hábiles')}</Text>
+                <Text style={s.resumenValor}>{dias.habiles}</Text>
+              </View>
+            </View>;
+          })()}
+
           <Text style={s.label}>{tr('Notes (optional)', 'Observaciones (opcional)')}</Text>
           <TextInput value={reason} onChangeText={setReason} multiline placeholder={tr('Anything administration should know', 'Algo que administración deba saber')} placeholderTextColor="#6E8297" style={[s.input, s.area]} />
           {!!message && <Text style={s.message}>{message}</Text>}
@@ -131,11 +179,17 @@ export default function PermissionsScreen() {
           <TouchableOpacity disabled={saving} onPress={submit} style={[s.submit, saving && { opacity: .6 }]}><Text style={s.submitText}>{saving ? tr('Sending...', 'Enviando...') : tr('Send to administration', 'Enviar a administración')}</Text></TouchableOpacity>
         </>}
       </View>
-      <Text style={s.section}>{tr('History', 'Historial')}</Text>
-      {items.map(item => <View key={item.id} style={s.item}><View style={s.itemTop}><View style={{ flex: 1 }}><Text style={s.itemDate}>{typeLabel(item.permissionType, tr)}</Text><Text style={s.itemMeta}>{item.permissionDate}{item.permissionEndDate && item.permissionEndDate !== item.permissionDate ? ` → ${item.permissionEndDate}` : ''}{item.startTime ? ` · ${item.startTime}${item.endTime ? `–${item.endTime}` : ''}` : ''}</Text></View><Text style={[s.badge, { color: item.status === 'APPROVED' ? '#4ADE80' : item.status === 'REJECTED' ? '#FB7185' : '#FBBF24' }]}>{statusLabel[item.status] || item.status}</Text></View><Text style={s.itemReason}>{item.reason}</Text>{item.reviewComment && <Text style={s.review}>Administración: {item.reviewComment}</Text>}{item.status === 'PENDING' && <TouchableOpacity onPress={() => cancel(item.id)}><Text style={s.cancel}>Cancelar solicitud</Text></TouchableOpacity>}</View>)}
-      {!items.length && <Text style={s.empty}>{tr("You don't have any requests yet.", 'Aún no tienes solicitudes.')}</Text>}
+      {/* El historial se pliega. Con varias solicitudes la pantalla se hacia
+          larga y el formulario quedaba enterrado arriba. */}
+      <TouchableOpacity onPress={() => setVerHistorial(v => !v)} style={s.sectionRow} activeOpacity={0.7}>
+        <Text style={s.section}>{tr('History', 'Historial')}</Text>
+        {!!items.length && <Text style={s.contador}>{items.length}</Text>}
+        <Ionicons name={verHistorial ? 'chevron-up' : 'chevron-down'} size={22} color="#7BC3FF" />
+      </TouchableOpacity>
+      {verHistorial && items.map(item => <View key={item.id} style={s.item}><View style={s.itemTop}><View style={{ flex: 1 }}><Text style={s.itemDate}>{typeLabel(item.permissionType, tr)}</Text><Text style={s.itemMeta}>{item.permissionDate}{item.permissionEndDate && item.permissionEndDate !== item.permissionDate ? ` → ${item.permissionEndDate}` : ''}{item.startTime ? ` · ${item.startTime}${item.endTime ? `–${item.endTime}` : ''}` : ''}</Text></View><Text style={[s.badge, { color: item.status === 'APPROVED' ? '#4ADE80' : item.status === 'REJECTED' ? '#FB7185' : '#FBBF24' }]}>{statusLabel[item.status] || item.status}</Text></View><Text style={s.itemReason}>{item.reason}</Text>{item.reviewComment && <Text style={s.review}>Administración: {item.reviewComment}</Text>}{item.status === 'PENDING' && <TouchableOpacity onPress={() => cancel(item.id)}><Text style={s.cancel}>Cancelar solicitud</Text></TouchableOpacity>}</View>)}
+      {verHistorial && !items.length && <Text style={s.empty}>{tr("You don't have any requests yet.", 'Aún no tienes solicitudes.')}</Text>}
     </ScrollView>
   </SafeAreaView>;
 }
 
-const s = StyleSheet.create({ page: { flex: 1, backgroundColor: '#061A2D' }, header: { flexDirection: 'row', gap: 14, padding: 20, borderBottomWidth: 1, borderBottomColor: '#173A55' }, back: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#102D47', alignItems: 'center', justifyContent: 'center' }, eyebrow: { color: '#68B8F8', fontSize: 12, fontWeight: '800', letterSpacing: 1.5 }, title: { color: '#FFF', fontSize: 25, fontWeight: '800' }, subtitle: { color: '#9CB0C3', fontSize: 13 }, content: { padding: 18, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: 50 }, card: { backgroundColor: '#0C263D', borderRadius: 18, padding: 20, borderWidth: 1, borderColor: '#244966' }, cardTitle: { color: '#FFF', fontSize: 20, fontWeight: '800' }, help: { color: '#AAC0D3', lineHeight: 20, marginTop: 7, marginBottom: 15 }, label: { color: '#DCEAF5', fontWeight: '700', marginTop: 12, marginBottom: 6 }, input: { backgroundColor: '#071B2D', borderWidth: 1, borderColor: '#315572', borderRadius: 11, padding: 13, color: '#FFF' }, area: { height: 90, textAlignVertical: 'top' }, types: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, typeBtn: { borderWidth: 1, borderColor: '#315572', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 }, typeActive: { backgroundColor: '#208AEF', borderColor: '#208AEF' }, typeText: { color: '#B7CADB', fontSize: 12 }, typeTextActive: { color: '#FFF', fontWeight: '800' }, file: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 13, borderWidth: 1, borderStyle: 'dashed', borderColor: '#4C7899', borderRadius: 11, marginTop: 15 }, fileText: { color: '#9EC6E5', flex: 1 }, message: { color: '#FBBF24', marginTop: 12 }, submit: { backgroundColor: '#2C99F2', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 16 }, submitText: { fontWeight: '800', color: '#FFF' }, section: { color: '#FFF', fontSize: 19, fontWeight: '800', marginTop: 25, marginBottom: 10 }, item: { backgroundColor: '#0C263D', borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#244966' }, itemTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 }, itemDate: { color: '#FFF', fontWeight: '800' }, itemMeta: { color: '#88A9C2', marginTop: 4, fontSize: 12 }, badge: { fontWeight: '800', fontSize: 12, textTransform: 'uppercase' }, itemReason: { color: '#B7CADB', marginTop: 8 }, review: { color: '#7BC3FF', marginTop: 7 }, cancel: { color: '#FB7185', fontWeight: '700', marginTop: 12 }, empty: { color: '#8299AD', textAlign: 'center', padding: 24 } });
+const s = StyleSheet.create({ page: { flex: 1, backgroundColor: '#061A2D' }, header: { flexDirection: 'row', gap: 14, padding: 20, borderBottomWidth: 1, borderBottomColor: '#173A55' }, back: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#102D47', alignItems: 'center', justifyContent: 'center' }, eyebrow: { color: '#68B8F8', fontSize: 12, fontWeight: '800', letterSpacing: 1.5 }, title: { color: '#FFF', fontSize: 25, fontWeight: '800' }, subtitle: { color: '#9CB0C3', fontSize: 13 }, content: { padding: 18, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: 50 }, card: { backgroundColor: '#0C263D', borderRadius: 18, padding: 20, borderWidth: 1, borderColor: '#244966' }, cardTitle: { color: '#FFF', fontSize: 20, fontWeight: '800' }, help: { color: '#AAC0D3', lineHeight: 20, marginTop: 7, marginBottom: 15 }, label: { color: '#DCEAF5', fontWeight: '700', marginTop: 12, marginBottom: 6 }, input: { backgroundColor: '#071B2D', borderWidth: 1, borderColor: '#315572', borderRadius: 11, padding: 13, color: '#FFF' }, area: { height: 90, textAlignVertical: 'top' }, types: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, typeBtn: { borderWidth: 1, borderColor: '#315572', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 }, typeActive: { backgroundColor: '#208AEF', borderColor: '#208AEF' }, typeText: { color: '#B7CADB', fontSize: 12 }, typeTextActive: { color: '#FFF', fontWeight: '800' }, file: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 13, borderWidth: 1, borderStyle: 'dashed', borderColor: '#4C7899', borderRadius: 11, marginTop: 15 }, fileText: { color: '#9EC6E5', flex: 1 }, message: { color: '#FBBF24', marginTop: 12 }, submit: { backgroundColor: '#2C99F2', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 16 }, submitText: { fontWeight: '800', color: '#FFF' }, section: { color: '#FFF', fontSize: 19, fontWeight: '800', flex: 1 }, item: { backgroundColor: '#0C263D', borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#244966' }, itemTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 }, itemDate: { color: '#FFF', fontWeight: '800' }, itemMeta: { color: '#88A9C2', marginTop: 4, fontSize: 12 }, badge: { fontWeight: '800', fontSize: 12, textTransform: 'uppercase' }, itemReason: { color: '#B7CADB', marginTop: 8 }, review: { color: '#7BC3FF', marginTop: 7 }, cancel: { color: '#FB7185', fontWeight: '700', marginTop: 12 }, empty: { color: '#8299AD', textAlign: 'center', padding: 24 }, hint: { color: '#8FA8BE', fontSize: 12, marginTop: 5, lineHeight: 17 }, resumen: { backgroundColor: '#071B2D', borderWidth: 1, borderColor: '#2B4E6B', borderRadius: 12, padding: 14, marginTop: 16 }, resumenTitulo: { color: '#7BC3FF', fontSize: 11, fontWeight: '800', letterSpacing: 1.1, marginBottom: 9 }, resumenFila: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 }, resumenEtiqueta: { color: '#AAC0D3', fontSize: 13 }, resumenValor: { color: '#FFF', fontSize: 16, fontWeight: '800' }, sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 25, marginBottom: 10 }, contador: { color: '#7BC3FF', backgroundColor: '#102D47', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, fontSize: 12, fontWeight: '800', overflow: 'hidden' } });
