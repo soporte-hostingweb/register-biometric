@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { noteServerDate } from '../utils/time';
 
 const ACCESS_TOKEN_KEY = '@asistencia_access_token';
 const SESSION_STARTED_AT_KEY = '@asistencia_session_started_at';
@@ -210,11 +211,14 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
+  let enviado = Date.now();
   let response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers,
     credentials: 'include',
   });
+  // El header Date ajusta el reloj de la app a la hora del servidor.
+  noteServerDate(response.headers.get('Date'), enviado, Date.now());
 
   // Solo la propia renovación debe evitar otro intento para no crear un bucle.
   // Otras rutas bajo /api/auth, como /api/auth/profile, sí necesitan renovar
@@ -227,11 +231,13 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
   if (refreshed.status !== 'ok') return response;
 
   headers.set('Authorization', `Bearer ${refreshed.token}`);
+  enviado = Date.now();
   response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers,
     credentials: 'include',
   });
+  noteServerDate(response.headers.get('Date'), enviado, Date.now());
 
   return response;
 }

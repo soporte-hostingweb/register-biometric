@@ -13,6 +13,7 @@ import AttendanceCamera from '../components/AttendanceCamera';
 import type { EnrollmentCapture } from '../components/AttendanceCamera.web';
 import { styles } from '../styles/dashboard';
 import { useLanguage } from '../services/language';
+import { addDays, checkTimeToInstant, formatHistoryTime, formatLimaClock, formatLimaTime, formatShiftTime, limaDateStr, serverNow } from '../utils/time';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -30,6 +31,8 @@ type Marcacion = {
   fecha: string;
   hora: string;
   ubicacion: string;
+  // Instante de la marcación (ms), para ordenar por fecha y hora.
+  instante?: number;
 };
 
 // Las tres formas de marcar. Sin credencial es el botón directo, sin verificar.
@@ -38,30 +41,12 @@ type AttendanceCredential =
   | { kind: 'pin'; pin: string }
   | null;
 
-const getTodayDateStr = () => {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
+// El día de hoy en Lima, con el reloj del servidor (no el del celular).
+const getTodayDateStr = () => limaDateStr(serverNow());
 
 const getStorageKey = (userEmail?: string | null) => {
   const cleanEmail = (userEmail || 'guest').trim().toLowerCase();
   return `@asistencia_marcaciones_${cleanEmail}`;
-};
-
-// SQL Server devuelve las columnas TIME como Date con fecha 1970, asi que no vale
-// con recortar la cadena: hay que leer la parte horaria en UTC.
-const formatShiftTime = (value: unknown): string | null => {
-  if (!value) return null;
-  if (typeof value === 'string') {
-    const match = /^(\d{2}):(\d{2})/.exec(value.trim());
-    return match ? `${match[1]}:${match[2]}` : null;
-  }
-  const asDate = new Date(value as any);
-  if (Number.isNaN(asDate.getTime())) return null;
-  return asDate.toISOString().slice(11, 16);
 };
 
 const parseAttendanceDate = (value: unknown) => {
@@ -76,80 +61,9 @@ const hasClockIn = (log: any) => {
   return value !== '' && value !== '--' && value !== '-- : --' && value !== '-' && value !== 'null';
 };
 
-const formatLocalTimeFromUTC = (timeStr?: string | null, dateStr?: string | null): string => {
-  if (!timeStr || timeStr === '--' || timeStr === '-' || timeStr === 'null') {
-    return '--';
-  }
-
-  const str = String(timeStr).trim();
-
-  if (str.includes('-') && (str.includes('T') || str.includes(' '))) {
-    const formattedStr = str.replace(' ', 'T');
-    const utcStr = (formattedStr.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(formattedStr))
-      ? formattedStr
-      : formattedStr + 'Z';
-    const d = new Date(utcStr);
-    if (!isNaN(d.getTime())) {
-      return d.toLocaleTimeString('es-PE', {
-        timeZone: 'America/Lima',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      });
-    }
-  }
-
-  // Extraer fecha base (YYYY-MM-DD)
-  let dateBase = getTodayDateStr();
-  if (dateStr) {
-    const cleanDateStr = String(dateStr).trim();
-    if (cleanDateStr.length >= 10) {
-      dateBase = cleanDateStr.substring(0, 10);
-    }
-  }
-
-  // Parsear hora (ej: "01:25 PM", "13:25:00", "8:25 a. m.")
-  const lowerStr = str.toLowerCase();
-  const isPM = lowerStr.includes('pm') || lowerStr.includes('p. m.') || lowerStr.includes('p.m.');
-  const isAM = lowerStr.includes('am') || lowerStr.includes('a. m.') || lowerStr.includes('a.m.');
-
-  const numbers = str.match(/\d+/g);
-  if (!numbers || numbers.length === 0) {
-    return timeStr;
-  }
-
-  let hours = parseInt(numbers[0], 10);
-  const minutes = numbers.length > 1 ? parseInt(numbers[1], 10) : 0;
-  const seconds = numbers.length > 2 ? parseInt(numbers[2], 10) : 0;
-
-  if (isPM && hours < 12) {
-    hours += 12;
-  } else if (isAM && hours === 12) {
-    hours = 0;
-  }
-
-  const hh = String(hours).padStart(2, '0');
-  const mm = String(minutes).padStart(2, '0');
-  const ss = String(seconds).padStart(2, '0');
-
-  const isoUtcStr = `${dateBase}T${hh}:${mm}:${ss}Z`;
-  const dateObj = new Date(isoUtcStr);
-
-  if (isNaN(dateObj.getTime())) {
-    return timeStr;
-  }
-
-  return dateObj.toLocaleTimeString('es-PE', {
-    timeZone: 'America/Lima',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
-};
-
 export default function Dashboard() {
   const { tr } = useLanguage();
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const [currentTime, setCurrentTime] = useState(() => new Date(serverNow()));
   const [marcaciones, setMarcaciones] = useState<Marcacion[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -267,7 +181,8 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    // Hora del servidor (header Date de la API), no la del celular.
+    const interval = setInterval(() => setCurrentTime(new Date(serverNow())), 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -310,75 +225,82 @@ export default function Dashboard() {
     registerPushToken();
   }, [email]);
 
-  useEffect(() => {
-    const syncMarcacionesWithServer = async () => {
-      if (!email) return;
-      try {
-        const todayStr = getTodayDateStr();
-        const response = await apiFetch(`/api/attendance/logs?date=${todayStr}&t=${Date.now()}`);
-        if (response.ok) {
-          const logs = await response.json();
-          const userLogs = logs.filter((log: any) => {
-            return (
-              (log.email && log.email.toLowerCase() === email.toLowerCase()) ||
-              (log.EMP_NOMBRE && fullName && log.EMP_NOMBRE.toLowerCase().includes(fullName.split(' ')[0].toLowerCase())) ||
-              (log.NOMBRE && fullName && log.NOMBRE.toLowerCase().includes(fullName.split(' ')[0].toLowerCase()))
-            );
+  // Las marcaciones de hoy, del servidor. /logs filtra por CAST(LogDateTime AS DATE)
+  // y las del celular se guardan en UTC: pasadas las 19:00 de Lima caen en el día
+  // siguiente. Por eso se piden hoy y mañana y se quedan las que son de hoy en Lima.
+  // Devuelve si el servidor respondió.
+  const cargarMarcacionesDelDia = useCallback(async (): Promise<boolean> => {
+    if (!email) return false;
+    const key = getStorageKey(email);
+    try {
+      const todayStr = getTodayDateStr();
+      const pedir = (dia: string) => apiFetch(`/api/attendance/logs?date=${dia}&t=${Date.now()}`);
+      const [response, responseManana] = await Promise.all([pedir(todayStr), pedir(addDays(todayStr, 1))]);
+      if (response.ok) {
+        const logs = [
+          ...(await response.json()),
+          ...(responseManana.ok ? await responseManana.json().catch(() => []) : []),
+        ];
+        const userLogs = logs.filter((log: any) => {
+          return (
+            (log.email && log.email.toLowerCase() === email.toLowerCase()) ||
+            (log.EMP_NOMBRE && fullName && log.EMP_NOMBRE.toLowerCase().includes(fullName.split(' ')[0].toLowerCase())) ||
+            (log.NOMBRE && fullName && log.NOMBRE.toLowerCase().includes(fullName.split(' ')[0].toLowerCase()))
+          );
+        });
+
+        const vistos = new Set<string>();
+        const serverMarcaciones: Marcacion[] = [];
+        for (const log of userLogs) {
+          const id = log.AttendanceLogID ? log.AttendanceLogID.toString() : '';
+          if (id && vistos.has(id)) continue;
+          if (id) vistos.add(id);
+          // La hora según de dónde vino: celular y manual en UTC, biométrico en Lima.
+          const instante = checkTimeToInstant(log.CHECKTIME, log.SN);
+          if (instante === null || limaDateStr(instante) !== todayStr) continue;
+          const tipo: 'Entrada' | 'Salida' = (log.CHECKTYPE === 0 || log.CHECKTYPE === '0' || log.CHECKTYPE === 'I' || log.CHECKTYPE === 'Entrada') ? 'Entrada' : 'Salida';
+          const ubicacion = log.SN ? log.SN.replace('MOBILE_GPS:', '') : 'Servidor Central';
+          serverMarcaciones.push({
+            id: id || String(instante),
+            tipo,
+            fecha: todayStr,
+            hora: formatLimaTime(instante),
+            ubicacion,
+            instante,
           });
-
-          if (userLogs.length > 0) {
-            const serverMarcaciones: Marcacion[] = userLogs.map((log: any) => {
-              const horaStr = log.CHECKTIME
-                ? formatLocalTimeFromUTC(String(log.CHECKTIME), todayStr)
-                : new Date().toLocaleTimeString('es-PE', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit',
-                  timeZone: 'America/Lima',
-                });
-              const tipo: 'Entrada' | 'Salida' = (log.CHECKTYPE === 0 || log.CHECKTYPE === '0' || log.CHECKTYPE === 'I' || log.CHECKTYPE === 'Entrada') ? 'Entrada' : 'Salida';
-              const ubicacion = log.SN ? log.SN.replace('MOBILE_GPS:', '') : 'Servidor Central';
-              return {
-                id: log.AttendanceLogID ? log.AttendanceLogID.toString() : Date.now().toString(),
-                tipo,
-                fecha: todayStr,
-                hora: horaStr,
-                ubicacion,
-              };
-            });
-
-            serverMarcaciones.sort((a, b) => (a.id || '').localeCompare(b.id || ''));
-            setMarcaciones(serverMarcaciones);
-
-            const key = getStorageKey(email);
-            await AsyncStorage.setItem(key, JSON.stringify(serverMarcaciones));
-            return;
-          } else {
-            // Si en el servidor no hay registros hoy (ej. borrados en SQL Server DB), reiniciar la app localmente
-            setMarcaciones([]);
-            const key = getStorageKey(email);
-            await AsyncStorage.removeItem(key);
-            return;
-          }
         }
-      } catch (err) {
-        console.log('Servidor no disponible para sincronizar:', err);
-      }
 
-      // Fallback a almacenamiento local si no se pudo conectar al servidor
-      try {
-        const key = getStorageKey(email);
-        const storedData = await AsyncStorage.getItem(key);
-        if (storedData) {
-          const parsed = JSON.parse(storedData);
-          if (Array.isArray(parsed)) {
-            setMarcaciones(parsed);
-          }
+        serverMarcaciones.sort((a, b) => (a.instante ?? 0) - (b.instante ?? 0));
+        setMarcaciones(serverMarcaciones);
+        if (serverMarcaciones.length > 0) {
+          await AsyncStorage.setItem(key, JSON.stringify(serverMarcaciones));
+        } else {
+          // Si en el servidor no hay registros hoy (ej. borrados en SQL Server DB), reiniciar la app localmente
+          await AsyncStorage.removeItem(key);
         }
-      } catch (err) {
-        console.error('Error al cargar marcaciones:', err);
+        return true;
       }
-    };
+    } catch (err) {
+      console.log('Servidor no disponible para sincronizar:', err);
+    }
+
+    // Fallback a almacenamiento local si no se pudo conectar al servidor
+    try {
+      const storedData = await AsyncStorage.getItem(key);
+      if (storedData) {
+        const parsed = JSON.parse(storedData);
+        if (Array.isArray(parsed)) {
+          setMarcaciones(parsed);
+        }
+      }
+    } catch (err) {
+      console.error('Error al cargar marcaciones:', err);
+    }
+    return false;
+  }, [email, fullName]);
+
+  useEffect(() => {
+    cargarMarcacionesDelDia();
 
     const fetchHistory = async () => {
       if (!email) return;
@@ -393,9 +315,8 @@ export default function Dashboard() {
       }
     };
 
-    syncMarcacionesWithServer();
     fetchHistory();
-  }, [email, fullName]);
+  }, [email, cargarMarcacionesDelDia]);
 
   useEffect(() => {
     // Antes esto pedia /api/empleados, que exige el permiso CanEmpleados: un
@@ -567,6 +488,7 @@ export default function Dashboard() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
       let registrationMessage = '';
+      let registeredLogId = '';
 
       try {
         const checkType = siguienteTipo === 'Entrada' ? 0 : 1;
@@ -608,6 +530,7 @@ export default function Dashboard() {
         }
         const registerData = await res.json().catch(() => ({}));
         registrationMessage = registerData.message || '';
+        registeredLogId = registerData.attendanceLogId ? String(registerData.attendanceLogId) : '';
         if (registerData.faceEnrolled || registerData.faceVerified) setFaceEnrolled(true);
       } catch (apiErr: any) {
         clearTimeout(timeoutId);
@@ -618,18 +541,24 @@ export default function Dashboard() {
         throw apiErr;
       }
 
-      const nuevaMarcacion: Marcacion = {
-        id: Date.now().toString(),
-        tipo: siguienteTipo,
-        fecha: todayStr,
-        hora: new Date().toLocaleTimeString('es-PE', { timeZone: 'America/Lima' }),
-        ubicacion: direccion,
-      };
-
-      const nuevasMarcaciones = [...marcaciones, nuevaMarcacion];
-      setMarcaciones(nuevasMarcaciones);
-      const key = getStorageKey(email);
-      await AsyncStorage.setItem(key, JSON.stringify(nuevasMarcaciones));
+      // La hora que vale es la del servidor. La respuesta no la trae, así que se
+      // recargan las marcaciones del día. Si el servidor no contesta, se anota con
+      // el reloj ajustado al servidor (no el del celular) hasta la próxima recarga.
+      const recargado = await cargarMarcacionesDelDia();
+      if (!recargado) {
+        const instante = serverNow();
+        const nuevaMarcacion: Marcacion = {
+          id: registeredLogId || String(instante),
+          tipo: siguienteTipo,
+          fecha: todayStr,
+          hora: formatLimaTime(instante),
+          ubicacion: direccion,
+          instante,
+        };
+        const nuevasMarcaciones = [...marcaciones, nuevaMarcacion];
+        setMarcaciones(nuevasMarcaciones);
+        await AsyncStorage.setItem(getStorageKey(email), JSON.stringify(nuevasMarcaciones));
+      }
 
       // Refrescar el historial en las estadísticas
       try {
@@ -686,15 +615,16 @@ export default function Dashboard() {
 
   const fecha = capitalize(
     currentTime.toLocaleDateString('es-PE', {
+      timeZone: 'America/Lima',
       weekday: 'long',
       day: 'numeric',
       month: 'long',
     }),
   );
 
-  const hora = currentTime.toLocaleTimeString();
+  const hora = formatLimaClock(currentTime);
 
-  const monthLabel = capitalize(currentTime.toLocaleDateString('es-PE', { month: 'long' }));
+  const monthLabel = capitalize(currentTime.toLocaleDateString('es-PE', { timeZone: 'America/Lima', month: 'long' }));
 
   const shiftLabel = (() => {
     if (!shift.entryTime || !shift.exitTime) return null;
@@ -837,8 +767,8 @@ export default function Dashboard() {
 
           const dateObj = parseAttendanceDate(log.date);
           const dateStr = dateObj.toLocaleDateString('es-PE');
-          const clockIn = formatLocalTimeFromUTC(log.clockIn, log.date);
-          const clockOut = formatLocalTimeFromUTC(log.clockOut, log.date);
+          const clockIn = formatHistoryTime(log.clockIn);
+          const clockOut = formatHistoryTime(log.clockOut);
           const hours = log.totalHours || '0h';
           const status = log.status || 'Registrado';
           const obs = log.observations || '';
@@ -942,8 +872,8 @@ export default function Dashboard() {
           tableRows += `
             <tr style="border-bottom: 1px solid #E0E0E0;">
               <td style="padding: 10px 12px; font-size: 12px;"><strong>${dateStr}</strong></td>
-              <td style="padding: 10px 12px; font-size: 12px;">${formatLocalTimeFromUTC(log.clockIn, log.date)}</td>
-              <td style="padding: 10px 12px; font-size: 12px;">${formatLocalTimeFromUTC(log.clockOut, log.date)}</td>
+              <td style="padding: 10px 12px; font-size: 12px;">${formatHistoryTime(log.clockIn)}</td>
+              <td style="padding: 10px 12px; font-size: 12px;">${formatHistoryTime(log.clockOut)}</td>
               <td style="padding: 10px 12px; font-size: 12px;">${log.totalHours || '0h'}</td>
               <td style="padding: 10px 12px; font-size: 12px;">
                 <span style="font-weight: 700; padding: 3px 6px; border-radius: 4px; font-size: 10px; text-transform: uppercase; color: ${statusColor}; background-color: ${statusBg};">
@@ -964,7 +894,7 @@ export default function Dashboard() {
             <div><strong>Colaborador:</strong> ${fullName}</div>
             <div><strong>Correo Electrónico:</strong> ${email}</div>
             <div><strong>Cargo:</strong> ${cargo || 'Técnico'}</div>
-            <div><strong>Fecha de Emisión:</strong> ${new Date().toLocaleDateString('es-PE')} ${new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</div>
+            <div><strong>Fecha de Emisión:</strong> ${limaDateStr(serverNow()).split('-').reverse().join('/')} ${formatLimaTime(serverNow())}</div>
           </div>
           <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
             <thead>
@@ -1271,7 +1201,7 @@ export default function Dashboard() {
                         </View>
                         <View style={styles.recentItemDetails}>
                           <Text style={styles.recentTimeText}>
-                            🚪 Ent: {formatLocalTimeFromUTC(log.clockIn, log.date)} | 🚪 Sal: {formatLocalTimeFromUTC(log.clockOut, log.date)}
+                            🚪 Ent: {formatHistoryTime(log.clockIn)} | 🚪 Sal: {formatHistoryTime(log.clockOut)}
                           </Text>
                           <Text style={styles.recentHours}>{log.totalHours || '0h'}</Text>
                         </View>
@@ -1479,7 +1409,7 @@ export default function Dashboard() {
                       </View>
                       <View style={styles.recentItemDetails}>
                         <Text style={styles.recentTimeText}>
-                          {formatLocalTimeFromUTC(log.clockIn, log.date)} → {formatLocalTimeFromUTC(log.clockOut, log.date)}
+                          {formatHistoryTime(log.clockIn)} → {formatHistoryTime(log.clockOut)}
                         </Text>
                         <Text style={styles.recentHours}>{log.totalHours || '0h'}</Text>
                       </View>
@@ -1627,7 +1557,7 @@ export default function Dashboard() {
                     </View>
                     <View style={styles.recentItemDetails}>
                       <Text style={styles.recentTimeText}>
-                        🚪 Ent: {formatLocalTimeFromUTC(log.clockIn, log.date)} | 🚪 Sal: {formatLocalTimeFromUTC(log.clockOut, log.date)}
+                        🚪 Ent: {formatHistoryTime(log.clockIn)} | 🚪 Sal: {formatHistoryTime(log.clockOut)}
                       </Text>
                       <Text style={styles.recentHours}>{log.totalHours || '0h'}</Text>
                     </View>
