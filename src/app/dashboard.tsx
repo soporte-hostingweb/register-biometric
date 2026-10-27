@@ -49,6 +49,10 @@ const getStorageKey = (userEmail?: string | null) => {
   return `@asistencia_marcaciones_${cleanEmail}`;
 };
 
+/** Texto para meter en HTML (el PDF mensual se arma con innerHTML). */
+const escaparHtml = (valor: unknown) => String(valor ?? '')
+  .replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]);
+
 const parseAttendanceDate = (value: unknown) => {
   const dateOnly = String(value || '').slice(0, 10);
   const match = dateOnly.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -668,6 +672,9 @@ export default function Dashboard() {
       }
       const script = document.createElement('script');
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js';
+      // Integridad (SRI): si el CDN sirviera otro archivo, el navegador no lo ejecuta.
+      script.integrity = 'sha512-UnrKxsCMN9hFk7M56t4I4ckB4N/2HHi0w/7+B/1JsXIX3DmyBcsGpT3/BsuZMZf+6mAr0vP81syWtfynHJ69JA==';
+      script.crossOrigin = 'anonymous';
       script.onload = () => resolve((window as any).ExcelJS);
       script.onerror = (err) => reject(err);
       document.head.appendChild(script);
@@ -835,6 +842,8 @@ export default function Dashboard() {
       }
       const script = document.createElement('script');
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      script.integrity = 'sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==';
+      script.crossOrigin = 'anonymous';
       script.onload = () => resolve((window as any).html2pdf);
       script.onerror = (err) => reject(err);
       document.head.appendChild(script);
@@ -854,6 +863,8 @@ export default function Dashboard() {
         element.style.color = '#333';
         element.style.backgroundColor = '#ffffff';
 
+        // Observaciones, estado y nombre vienen del servidor: escapados antes de ir a innerHTML.
+        const e = escaparHtml;
         let tableRows = '';
         thisMonthLogs.forEach((log: any) => {
           const dateObj = parseAttendanceDate(log.date);
@@ -872,15 +883,15 @@ export default function Dashboard() {
           tableRows += `
             <tr style="border-bottom: 1px solid #E0E0E0;">
               <td style="padding: 10px 12px; font-size: 12px;"><strong>${dateStr}</strong></td>
-              <td style="padding: 10px 12px; font-size: 12px;">${formatHistoryTime(log.clockIn)}</td>
-              <td style="padding: 10px 12px; font-size: 12px;">${formatHistoryTime(log.clockOut)}</td>
-              <td style="padding: 10px 12px; font-size: 12px;">${log.totalHours || '0h'}</td>
+              <td style="padding: 10px 12px; font-size: 12px;">${e(formatHistoryTime(log.clockIn))}</td>
+              <td style="padding: 10px 12px; font-size: 12px;">${e(formatHistoryTime(log.clockOut))}</td>
+              <td style="padding: 10px 12px; font-size: 12px;">${e(log.totalHours || '0h')}</td>
               <td style="padding: 10px 12px; font-size: 12px;">
                 <span style="font-weight: 700; padding: 3px 6px; border-radius: 4px; font-size: 10px; text-transform: uppercase; color: ${statusColor}; background-color: ${statusBg};">
-                  ${log.status || 'Registrado'}
+                  ${e(log.status || 'Registrado')}
                 </span>
               </td>
-              <td style="padding: 10px 12px; font-size: 12px;">${log.observations || ''}</td>
+              <td style="padding: 10px 12px; font-size: 12px;">${e(log.observations || '')}</td>
             </tr>
           `;
         });
@@ -891,9 +902,9 @@ export default function Dashboard() {
             <div style="font-size: 20px; font-weight: 600; color: #555; font-family: sans-serif;">Reporte Mensual de Asistencia</div>
           </div>
           <div style="margin-bottom: 30px; line-height: 1.6; font-size: 14px; background-color: #F4F6F9; padding: 15px; border-radius: 8px;">
-            <div><strong>Colaborador:</strong> ${fullName}</div>
-            <div><strong>Correo Electrónico:</strong> ${email}</div>
-            <div><strong>Cargo:</strong> ${cargo || 'Técnico'}</div>
+            <div><strong>Colaborador:</strong> ${e(fullName)}</div>
+            <div><strong>Correo Electrónico:</strong> ${e(email)}</div>
+            <div><strong>Cargo:</strong> ${e(cargo || 'Técnico')}</div>
             <div><strong>Fecha de Emisión:</strong> ${limaDateStr(serverNow()).split('-').reverse().join('/')} ${formatLimaTime(serverNow())}</div>
           </div>
           <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">

@@ -117,12 +117,24 @@ export async function saveLoginSession(user: AuthSessionUser, token: string) {
   ]);
 }
 
+// Lo que la app guarda por usuario: la foto de perfil y las marcaciones del día.
+const PREFIJOS_DE_DATOS_DEL_USUARIO = ['@profile_photo_', '@asistencia_marcaciones_'];
+
 export async function clearAuthSession() {
+  // En una PC compartida, el siguiente no debe ver la foto ni las marcaciones del anterior.
+  let datosDelUsuario: string[] = [];
+  try {
+    const claves = await AsyncStorage.getAllKeys();
+    datosDelUsuario = claves.filter((clave) => PREFIJOS_DE_DATOS_DEL_USUARIO.some((prefijo) => clave.startsWith(prefijo)));
+  } catch {
+    // Si no se pueden listar, al menos se borra la sesión.
+  }
   await AsyncStorage.multiRemove([
     ACCESS_TOKEN_KEY,
     SESSION_STARTED_AT_KEY,
     SESSION_EXPIRES_AT_KEY,
     SESSION_USER_KEY,
+    ...datosDelUsuario,
   ]);
 }
 
