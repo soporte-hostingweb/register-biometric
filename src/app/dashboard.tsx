@@ -4,16 +4,20 @@ import * as Device from 'expo-device';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { apiFetch, logoutFromApi } from '../services/api';
-import { getWebPushPermission, subscribeToWebPush, supportsWebPush } from '../services/web-push';
+import { useCallback, useEffect, useState } from 'react';
+import { Image, Modal, Platform, Pressable, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import AttendanceCamera from '../components/AttendanceCamera';
 import type { EnrollmentCapture } from '../components/AttendanceCamera.web';
-import { styles } from '../styles/dashboard';
+import MarkTimeline from '../components/MarkTimeline';
+import TabScreen from '../components/TabScreen';
+import { apiFetch } from '../services/api';
+import { buildMarks, fetchHistory, formatClockDate, HistoryLog, MarkItem } from '../services/attendance';
 import { useLanguage } from '../services/language';
-import { addDays, checkTimeToInstant, formatHistoryTime, formatLimaClock, formatLimaTime, formatShiftTime, limaDateStr, serverNow } from '../utils/time';
+import { goToTab } from '../services/session-params';
+import { getWebPushPermission, subscribeToWebPush, supportsWebPush } from '../services/web-push';
+import { styles } from '../styles/dashboard';
+import { colors, WIDE_MAX_WIDTH } from '../styles/theme';
+import { addDays, checkTimeToInstant, formatLimaTime, formatShiftTime, limaDateStr, serverNow } from '../utils/time';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -25,21 +29,18 @@ Notifications.setNotificationHandler({
   }),
 });
 
-type Marcacion = {
+type Marcacion = MarkItem & {
   id?: string;
-  tipo: 'Entrada' | 'Salida';
-  fecha: string;
-  hora: string;
-  ubicacion: string;
   // Instante de la marcación (ms), para ordenar por fecha y hora.
   instante?: number;
 };
 
-// Las tres formas de marcar. Sin credencial es el botón directo, sin verificar.
+// Las dos formas de marcar: el servidor rechaza una marcación sin credencial.
 type AttendanceCredential =
   | { kind: 'face'; photoDataUrl: string; faceDescriptor: number[] }
-  | { kind: 'pin'; pin: string }
-  | null;
+  | { kind: 'pin'; pin: string };
+
+type Tone = 'info' | 'ok' | 'error';
 
 // El día de hoy en Lima, con el reloj del servidor (no el del celular).
 const getTodayDateStr = () => limaDateStr(serverNow());
@@ -49,41 +50,34 @@ const getStorageKey = (userEmail?: string | null) => {
   return `@asistencia_marcaciones_${cleanEmail}`;
 };
 
-/** Texto para meter en HTML (el PDF mensual se arma con innerHTML). */
-const escaparHtml = (valor: unknown) => String(valor ?? '')
-  .replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]);
-
-const parseAttendanceDate = (value: unknown) => {
-  const dateOnly = String(value || '').slice(0, 10);
-  const match = dateOnly.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0);
-  return new Date(String(value || ''));
-};
-
-const hasClockIn = (log: any) => {
-  const value = String(log?.clockIn || '').trim().toLowerCase();
-  return value !== '' && value !== '--' && value !== '-- : --' && value !== '-' && value !== 'null';
+/** El reloj grande «09:41:32» en hora de Lima (Perú es siempre UTC-5). */
+const limaClock24 = (instant: number) => {
+  const d = new Date(instant - 5 * 60 * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 };
 
 export default function Dashboard() {
-  const { tr } = useLanguage();
-  const [currentTime, setCurrentTime] = useState(() => new Date(serverNow()));
+  const { tr, language } = useLanguage();
+  const { fullName, rol, email } = useLocalSearchParams<{ fullName: string; rol: string; email: string }>();
+  const session = { fullName, rol, email };
+  const { width } = useWindowDimensions();
+  const isWide = width >= 900;
+
+  const [now, setNow] = useState(() => serverNow());
   const [marcaciones, setMarcaciones] = useState<Marcacion[]>([]);
+  const [historyLogs, setHistoryLogs] = useState<HistoryLog[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState('');
-  const [menuVisible, setMenuVisible] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ top: 72, right: 20 });
-  const menuButtonRef = useRef<View>(null);
+  const [messageTone, setMessageTone] = useState<Tone>('info');
   const [cargo, setCargo] = useState<string | null>(null);
-  const [shift, setShift] = useState<{ entryTime: string | null; exitTime: string | null }>({
-    entryTime: null,
-    exitTime: null,
-  });
+  const [area, setArea] = useState<string | null>(null);
+  const [shift, setShift] = useState<{ entryTime: string | null; exitTime: string | null }>({ entryTime: null, exitTime: null });
   const [hasAttendancePin, setHasAttendancePin] = useState(false);
+  const [methodPickerVisible, setMethodPickerVisible] = useState(false);
   const [pinPromptVisible, setPinPromptVisible] = useState(false);
   const [pinValue, setPinValue] = useState('');
-  const [historyLogs, setHistoryLogs] = useState<any[]>([]);
-  const [showFullHistory, setShowFullHistory] = useState(false);
   const [cameraVisible, setCameraVisible] = useState(false);
   const [cameraPurpose, setCameraPurpose] = useState<'attendance' | 'enrollment'>('attendance');
   const [faceEnrolled, setFaceEnrolled] = useState<boolean | null>(null);
@@ -91,20 +85,21 @@ export default function Dashboard() {
   const [pushActivating, setPushActivating] = useState(false);
   const [pushMessage, setPushMessage] = useState('');
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
-  const { width } = useWindowDimensions();
-  const isDesktop = Platform.OS === 'web' && width > 768;
 
-  const toggleProfileMenu = () => {
-    if (menuVisible) {
-      setMenuVisible(false);
-      return;
-    }
-    menuButtonRef.current?.measureInWindow((x, y, buttonWidth, buttonHeight) => {
-      setMenuPosition({ top: y + buttonHeight + 8, right: Math.max(12, width - x - buttonWidth) });
-      setMenuVisible(true);
-    });
+  const notify = (text: string, tone: Tone = 'info') => {
+    setMessage(text);
+    setMessageTone(tone);
   };
-  const { fullName, rol, email } = useLocalSearchParams<{ fullName: string; rol: string; email: string }>();
+
+  useEffect(() => {
+    if (!email) router.replace('/');
+  }, [email]);
+
+  // Hora del servidor (header Date de la API), no la del celular.
+  useEffect(() => {
+    const interval = setInterval(() => setNow(serverNow()), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useFocusEffect(useCallback(() => {
     if (!email) return;
@@ -137,23 +132,13 @@ export default function Dashboard() {
   }, [email]));
 
   useEffect(() => {
-    const fetchFaceStatus = async () => {
-      if (!email) return;
-      try {
-        const response = await apiFetch('/api/attendance/face-status');
+    if (!email) return;
+    apiFetch('/api/attendance/face-status')
+      .then(async (response) => {
         const data = await response.json().catch(() => ({}));
         if (response.ok) setFaceEnrolled(Boolean(data.enrolled));
-      } catch (err) {
-        console.log('No se pudo consultar el registro facial:', err);
-      }
-    };
-    fetchFaceStatus();
-  }, [email]);
-
-  useEffect(() => {
-    if (!email) {
-      router.replace('/');
-    }
+      })
+      .catch((err) => console.log('No se pudo consultar el registro facial:', err));
   }, [email]);
 
   useEffect(() => {
@@ -175,28 +160,20 @@ export default function Dashboard() {
     setPushMessage('');
     try {
       await subscribeToWebPush();
-      setPushMessage('Notificaciones de asistencia activadas correctamente.');
+      setPushMessage(tr('Attendance notifications enabled.', 'Notificaciones de asistencia activadas correctamente.'));
       setTimeout(() => setShowPushPrompt(false), 1200);
     } catch (error: any) {
-      setPushMessage(error?.message || 'No se pudieron activar las notificaciones.');
+      setPushMessage(error?.message || tr('Notifications could not be enabled.', 'No se pudieron activar las notificaciones.'));
     } finally {
       setPushActivating(false);
     }
   };
 
-  useEffect(() => {
-    // Hora del servidor (header Date de la API), no la del celular.
-    const interval = setInterval(() => setCurrentTime(new Date(serverNow())), 1000);
-    return () => clearInterval(interval);
-  }, []);
-
+  // Token push de la app nativa (en Expo Go no hay push remoto: se ignora).
   useEffect(() => {
     const registerPushToken = async () => {
-      if (!email) return;
+      if (!email || !Device.isDevice) return;
       try {
-        if (!Device.isDevice) return;
-
-        // Solicitar permisos de notificación
         const { status: existingStatus } = await Notifications.getPermissionsAsync();
         let finalStatus = existingStatus;
         if (existingStatus !== 'granted') {
@@ -205,15 +182,12 @@ export default function Dashboard() {
         }
         if (finalStatus !== 'granted') return;
 
-        // Intentar obtener el token push de Expo (capturando la limitación de Expo Go SDK 53+)
         let pushToken: string | undefined;
         try {
-          const tokenData = await Notifications.getExpoPushTokenAsync();
-          pushToken = tokenData.data;
-        } catch (tokenError) {
-          console.log('Aviso (Expo Go): Notificaciones push remotas deshabilitadas en modo Expo Go SDK 53+. Funcionará normalmente en el APK generado.');
+          pushToken = (await Notifications.getExpoPushTokenAsync()).data;
+        } catch {
+          console.log('Aviso (Expo Go): notificaciones push remotas deshabilitadas. Funcionará en el APK.');
         }
-
         if (pushToken) {
           await apiFetch('/api/users/push-token', {
             method: 'POST',
@@ -225,7 +199,6 @@ export default function Dashboard() {
         console.log('Aviso: Registro de token finalizado:', err);
       }
     };
-
     registerPushToken();
   }, [email]);
 
@@ -245,13 +218,12 @@ export default function Dashboard() {
           ...(await response.json()),
           ...(responseManana.ok ? await responseManana.json().catch(() => []) : []),
         ];
-        const userLogs = logs.filter((log: any) => {
-          return (
-            (log.email && log.email.toLowerCase() === email.toLowerCase()) ||
-            (log.EMP_NOMBRE && fullName && log.EMP_NOMBRE.toLowerCase().includes(fullName.split(' ')[0].toLowerCase())) ||
-            (log.NOMBRE && fullName && log.NOMBRE.toLowerCase().includes(fullName.split(' ')[0].toLowerCase()))
-          );
-        });
+        const primerNombre = String(fullName || '').split(' ')[0].toLowerCase();
+        const userLogs = logs.filter((log: any) => (
+          (log.email && log.email.toLowerCase() === email.toLowerCase()) ||
+          (log.EMP_NOMBRE && primerNombre && log.EMP_NOMBRE.toLowerCase().includes(primerNombre)) ||
+          (log.NOMBRE && primerNombre && log.NOMBRE.toLowerCase().includes(primerNombre))
+        ));
 
         const vistos = new Set<string>();
         const serverMarcaciones: Marcacion[] = [];
@@ -263,13 +235,13 @@ export default function Dashboard() {
           const instante = checkTimeToInstant(log.CHECKTIME, log.SN);
           if (instante === null || limaDateStr(instante) !== todayStr) continue;
           const tipo: 'Entrada' | 'Salida' = (log.CHECKTYPE === 0 || log.CHECKTYPE === '0' || log.CHECKTYPE === 'I' || log.CHECKTYPE === 'Entrada') ? 'Entrada' : 'Salida';
-          const ubicacion = log.SN ? log.SN.replace('MOBILE_GPS:', '') : 'Servidor Central';
           serverMarcaciones.push({
+            key: id || String(instante),
             id: id || String(instante),
             tipo,
             fecha: todayStr,
             hora: formatLimaTime(instante),
-            ubicacion,
+            ubicacion: log.SN ? log.SN.replace('MOBILE_GPS:', '') : 'Servidor Central',
             instante,
           });
         }
@@ -279,7 +251,7 @@ export default function Dashboard() {
         if (serverMarcaciones.length > 0) {
           await AsyncStorage.setItem(key, JSON.stringify(serverMarcaciones));
         } else {
-          // Si en el servidor no hay registros hoy (ej. borrados en SQL Server DB), reiniciar la app localmente
+          // Si en el servidor no hay registros hoy (p. ej. borrados en SQL Server), se limpia lo local.
           await AsyncStorage.removeItem(key);
         }
         return true;
@@ -288,14 +260,12 @@ export default function Dashboard() {
       console.log('Servidor no disponible para sincronizar:', err);
     }
 
-    // Fallback a almacenamiento local si no se pudo conectar al servidor
+    // Sin servidor: lo último guardado en el dispositivo.
     try {
       const storedData = await AsyncStorage.getItem(key);
       if (storedData) {
         const parsed = JSON.parse(storedData);
-        if (Array.isArray(parsed)) {
-          setMarcaciones(parsed);
-        }
+        if (Array.isArray(parsed)) setMarcaciones(parsed.map((m: Marcacion) => ({ ...m, key: m.key || m.id || String(m.instante) })));
       }
     } catch (err) {
       console.error('Error al cargar marcaciones:', err);
@@ -303,42 +273,31 @@ export default function Dashboard() {
     return false;
   }, [email, fullName]);
 
-  useEffect(() => {
+  const refreshHistory = useCallback(async () => {
+    if (!email) return;
+    const data = await fetchHistory(email);
+    if (data) setHistoryLogs(data);
+  }, [email]);
+
+  // Al volver a la pestaña se recarga: puede haber marcado en otro equipo.
+  useFocusEffect(useCallback(() => {
     cargarMarcacionesDelDia();
-
-    const fetchHistory = async () => {
-      if (!email) return;
-      try {
-        const response = await apiFetch(`/api/attendance/history/by-email/${encodeURIComponent(email)}`);
-        if (response.ok) {
-          const data = await response.json();
-          setHistoryLogs(data);
-        }
-      } catch (err) {
-        console.log('Error al cargar historial del servidor:', err);
-      }
-    };
-
-    fetchHistory();
-  }, [email, cargarMarcacionesDelDia]);
+    refreshHistory();
+  }, [cargarMarcacionesDelDia, refreshHistory]));
 
   useEffect(() => {
-    // Antes esto pedia /api/empleados, que exige el permiso CanEmpleados: un
-    // empleado normal recibia 403 y el cargo no aparecia nunca. /api/auth/profile
-    // devuelve los datos del propio usuario sin permisos especiales, y ademas trae
-    // el horario que necesita la tarjeta principal.
+    // /api/auth/profile devuelve los datos del propio usuario sin permisos especiales.
     const fetchProfile = async () => {
       try {
         const response = await apiFetch('/api/auth/profile');
         if (!response.ok) return;
-        const data = await response.json();
-        const employee = data?.employee;
+        const employee = (await response.json())?.employee;
         if (!employee) return;
         if (employee.cargo) setCargo(employee.cargo);
-        setShift({
-          entryTime: formatShiftTime(employee.entryTime),
-          exitTime: formatShiftTime(employee.exitTime),
-        });
+        // El área solo aparece si el backend la manda (contrato activo: DepartmentName).
+        const areaValue = employee.area || employee.departamento || employee.department;
+        if (areaValue) setArea(String(areaValue));
+        setShift({ entryTime: formatShiftTime(employee.entryTime), exitTime: formatShiftTime(employee.exitTime) });
       } catch {
         // Sin perfil simplemente no se muestran cargo ni turno.
       }
@@ -349,8 +308,7 @@ export default function Dashboard() {
       try {
         const response = await apiFetch('/api/attendance/me/biometric-pin');
         if (!response.ok) return;
-        const data = await response.json();
-        setHasAttendancePin(Boolean(data?.hasAttendancePin));
+        setHasAttendancePin(Boolean((await response.json())?.hasAttendancePin));
       } catch {
         // Sin respuesta simplemente no se ofrece la opción de PIN.
       }
@@ -362,23 +320,51 @@ export default function Dashboard() {
     }
   }, [email]);
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([cargarMarcacionesDelDia(), refreshHistory()]);
+    setRefreshing(false);
+  };
+
   const todayStr = getTodayDateStr();
   const hoyMarcaciones = marcaciones.filter((m) => m.fecha === todayStr);
-
-  const tieneEntradaHoy = hoyMarcaciones.some((m) => m.tipo === 'Entrada');
+  const entradaHoy = hoyMarcaciones.find((m) => m.tipo === 'Entrada');
+  const tieneEntradaHoy = Boolean(entradaHoy);
   const tieneSalidaHoy = hoyMarcaciones.some((m) => m.tipo === 'Salida');
   const completadoHoy = tieneEntradaHoy && tieneSalidaHoy;
-
   const siguienteTipo: 'Entrada' | 'Salida' = tieneEntradaHoy ? 'Salida' : 'Entrada';
+  const recentMarks = buildMarks(historyLogs, hoyMarcaciones, todayStr).slice(0, isWide ? 8 : 4);
 
-  // Ya no redirige al alta facial: marcar sin rostro es una opcion valida, asi que
-  // este camino solo se ofrece a quien ya tiene su plantilla registrada.
-  const openCameraFlow = () => {
-    if (completadoHoy) {
-      setMessage(tr('You already clocked in and out today', 'Ya registraste tu Entrada y Salida por el día de hoy'));
+  // ---- Marcar --------------------------------------------------------------
+
+  const alreadyDone = () => {
+    if (!completadoHoy) return false;
+    notify(tr('You already clocked in and out today', 'Ya registraste tu Entrada y Salida por el día de hoy'), 'info');
+    return true;
+  };
+
+  const openPinPrompt = () => {
+    setMethodPickerVisible(false);
+    if (alreadyDone()) return;
+    if (!hasAttendancePin) {
+      notify(tr('You do not have an attendance PIN yet. Ask your administrator for one.', 'Todavía no tienes PIN de asistencia. Solicítalo a administración.'), 'error');
       return;
     }
+    setPinValue('');
+    setMessage('');
+    setPinPromptVisible(true);
+  };
 
+  const openEnrollmentFlow = () => {
+    setMethodPickerVisible(false);
+    setCameraPurpose('enrollment');
+    setMessage('');
+    setCameraVisible(true);
+  };
+
+  const openCameraFlow = () => {
+    setMethodPickerVisible(false);
+    if (alreadyDone()) return;
     if (faceEnrolled === false) {
       openEnrollmentFlow();
       return;
@@ -388,50 +374,44 @@ export default function Dashboard() {
     setCameraVisible(true);
   };
 
-  const handleMarcar = (photoDataUrl: string, faceDescriptor: number[]) =>
-    submitAttendance({ kind: 'face', photoDataUrl, faceDescriptor });
-
-  // Marcar siempre pide el PIN. Un fichaje sin verificar no prueba nada: con la
-  // contraseña de acceso bastaría para registrar asistencia desde cualquier sitio.
-  const openPinPrompt = () => {
-    if (completadoHoy) {
-      setMessage(tr('You already clocked in and out today', 'Ya registraste tu Entrada y Salida por el día de hoy'));
-      return;
+  // Un botón de marcar: si hay PIN y rostro se pregunta cuál usar; si solo hay
+  // uno, va directo. Un fichaje sin verificar no se permite (el backend tampoco).
+  const startMark = (tipo: 'Entrada' | 'Salida') => {
+    if (alreadyDone() || tipo !== siguienteTipo) return;
+    const canFace = faceEnrolled === true;
+    if (hasAttendancePin && canFace) {
+      setMessage('');
+      setMethodPickerVisible(true);
+    } else if (canFace) {
+      openCameraFlow();
+    } else if (hasAttendancePin) {
+      openPinPrompt();
+    } else if (faceEnrolled === false) {
+      setMethodPickerVisible(true);
+    } else {
+      openPinPrompt();
     }
-    if (!hasAttendancePin) {
-      setMessage(tr(
-        'You do not have an attendance PIN yet. Ask your administrator for one.',
-        'Todavía no tienes PIN de asistencia. Solicítalo a administración.',
-      ));
-      return;
-    }
-    setPinValue('');
-    setMessage('');
-    setPinPromptVisible(true);
   };
 
   const confirmPinMark = () => {
     const pin = pinValue.trim();
     if (!/^[0-9]{6}$/.test(pin)) {
-      setMessage(tr('The PIN must be exactly 6 digits', 'El PIN debe tener exactamente 6 dígitos'));
+      notify(tr('The PIN must be exactly 6 digits', 'El PIN debe tener exactamente 6 dígitos'), 'error');
       return;
     }
     setPinPromptVisible(false);
     submitAttendance({ kind: 'pin', pin });
   };
 
-  const openEnrollmentFlow = () => {
-    setCameraPurpose('enrollment');
-    setMessage('');
-    setCameraVisible(true);
-  };
+  const handleMarcar = (photoDataUrl: string, faceDescriptor: number[]) =>
+    submitAttendance({ kind: 'face', photoDataUrl, faceDescriptor });
 
   const handleEnrollFace = async (_photoDataUrl: string, _faceDescriptor: number[], captures?: EnrollmentCapture[]) => {
     setCameraVisible(false);
     setLoading(true);
-    setMessage('Registrando tu rostro…');
+    notify(tr('Registering your face…', 'Registrando tu rostro…'), 'info');
     try {
-      if (!captures || captures.length !== 3) throw new Error('Debes completar las tres capturas del rostro');
+      if (!captures || captures.length !== 3) throw new Error(tr('You must complete the three face captures', 'Debes completar las tres capturas del rostro'));
       const response = await apiFetch('/api/attendance/face-enroll-3', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -440,20 +420,20 @@ export default function Dashboard() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || 'No se pudo registrar el rostro');
       setFaceEnrolled(true);
-      setMessage(data.message || 'Rostro registrado correctamente');
+      notify(data.message || tr('Face registered successfully', 'Rostro registrado correctamente'), 'ok');
     } catch (error: any) {
-      setMessage(error.message || 'No se pudo registrar el rostro');
+      notify(error.message || 'No se pudo registrar el rostro', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  // El empleado elige como marcar. Con `face` se envia la plantilla y el servidor
-  // verifica la identidad; sin ella la marcacion se guarda como NO verificada.
+  // Con `face` se envía la plantilla y el servidor verifica la identidad; con
+  // `pin`, el PIN de asistencia. Además van la ubicación y el tipo de marcación.
   const submitAttendance = async (credential: AttendanceCredential) => {
-    if (credential?.kind === 'face' &&
+    if (credential.kind === 'face' &&
       (!credential.photoDataUrl || !Array.isArray(credential.faceDescriptor) || credential.faceDescriptor.length < 64)) {
-      setMessage(tr('You must take a photo to verify your identity', 'Debes tomar una fotografía para verificar tu identidad'));
+      notify(tr('You must take a photo to verify your identity', 'Debes tomar una fotografía para verificar tu identidad'), 'error');
       return;
     }
 
@@ -463,27 +443,19 @@ export default function Dashboard() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        setMessage('Permiso de ubicación denegado');
-        setLoading(false);
+        notify(tr('Location permission denied', 'Permiso de ubicación denegado'), 'error');
         return;
       }
 
       const location = await Location.getCurrentPositionAsync({});
-      const coords = `${location.coords.latitude.toFixed(5)}, ${location.coords.longitude.toFixed(5)}`;
-
-      let direccion = coords;
+      let direccion = `${location.coords.latitude.toFixed(5)}, ${location.coords.longitude.toFixed(5)}`;
       try {
         const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.coords.latitude}&lon=${location.coords.longitude}&zoom=17`, {
-          headers: {
-            'User-Agent': 'AverageBiometricRegistrationApp'
-          }
+          headers: { 'User-Agent': 'AverageBiometricRegistrationApp' },
         });
         if (geoRes.ok) {
           const geoData = await geoRes.json();
-          if (geoData && geoData.display_name) {
-            const parts = geoData.display_name.split(',');
-            direccion = parts.slice(0, 4).join(',').trim();
-          }
+          if (geoData?.display_name) direccion = geoData.display_name.split(',').slice(0, 4).join(',').trim();
         }
       } catch (geoErr) {
         console.log('Error al obtener dirección:', geoErr);
@@ -495,36 +467,26 @@ export default function Dashboard() {
       let registeredLogId = '';
 
       try {
-        const checkType = siguienteTipo === 'Entrada' ? 0 : 1;
         const res = await apiFetch('/api/attendance/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email,
-            checkType,
+            checkType: siguienteTipo === 'Entrada' ? 0 : 1,
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
-            // Se envía solo el campo de la credencial elegida. Omitirlos todos es lo
-            // que el backend interpreta como marcación rápida sin verificar.
-            ...(credential?.kind === 'face'
-              ? {
-                  photoData: credential.photoDataUrl,
-                  faceDescriptor: credential.faceDescriptor,
-                  faceModel: 'human-faceres-v1',
-                }
-              : {}),
-            ...(credential?.kind === 'pin' ? { attendancePin: credential.pin } : {}),
+            ...(credential.kind === 'face'
+              ? { photoData: credential.photoDataUrl, faceDescriptor: credential.faceDescriptor, faceModel: 'human-faceres-v1' }
+              : { attendancePin: credential.pin }),
           }),
           signal: controller.signal,
         });
-
         clearTimeout(timeoutId);
 
         if (res.status === 403) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.message || 'Acceso Denegado: Tu IP no está autorizada. Conéctate al Wi-Fi de la oficina.');
         }
-
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           const similarityDetail = errData.code === 'FACE_NOT_MATCHED' && Number.isFinite(Number(errData.similarity))
@@ -538,944 +500,275 @@ export default function Dashboard() {
         if (registerData.faceEnrolled || registerData.faceVerified) setFaceEnrolled(true);
       } catch (apiErr: any) {
         clearTimeout(timeoutId);
-        console.log('Aviso: Error en el registro del servidor:', apiErr);
         if (apiErr.name === 'AbortError') {
           throw new Error('Tiempo de espera agotado. Asegúrate de estar conectado al Wi-Fi de la oficina.');
         }
         throw apiErr;
       }
 
-      // La hora que vale es la del servidor. La respuesta no la trae, así que se
-      // recargan las marcaciones del día. Si el servidor no contesta, se anota con
-      // el reloj ajustado al servidor (no el del celular) hasta la próxima recarga.
+      // La hora que vale es la del servidor: se recargan las marcaciones del día.
+      // Si el servidor no contesta, se anota con el reloj ajustado al servidor.
       const recargado = await cargarMarcacionesDelDia();
       if (!recargado) {
         const instante = serverNow();
-        const nuevaMarcacion: Marcacion = {
+        const nuevas = [...marcaciones, {
+          key: registeredLogId || String(instante),
           id: registeredLogId || String(instante),
           tipo: siguienteTipo,
           fecha: todayStr,
           hora: formatLimaTime(instante),
           ubicacion: direccion,
           instante,
-        };
-        const nuevasMarcaciones = [...marcaciones, nuevaMarcacion];
-        setMarcaciones(nuevasMarcaciones);
-        await AsyncStorage.setItem(getStorageKey(email), JSON.stringify(nuevasMarcaciones));
+        }];
+        setMarcaciones(nuevas);
+        await AsyncStorage.setItem(getStorageKey(email), JSON.stringify(nuevas));
       }
-
-      // Refrescar el historial en las estadísticas
-      try {
-        const historyRes = await apiFetch(`/api/attendance/history/by-email/${encodeURIComponent(email)}`);
-        if (historyRes.ok) {
-          const historyData = await historyRes.json();
-          setHistoryLogs(historyData);
-        }
-      } catch (err) {
-        console.log('Error refrescando estadísticas:', err);
-      }
-
-      setMessage(registrationMessage || `${siguienteTipo} registrada correctamente`);
+      await refreshHistory();
+      notify(registrationMessage || `${siguienteTipo} registrada correctamente`, 'ok');
     } catch (error: any) {
-      setMessage(error.message || 'No se pudo registrar la asistencia');
+      notify(error.message || 'No se pudo registrar la asistencia', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = async () => {
-    setMenuVisible(false);
-    await logoutFromApi();
-    router.replace('/');
-  };
-
-  const handlePerfil = () => {
-    setMenuVisible(false);
-    router.push({
-      pathname: '/perfil',
-      params: { fullName, rol, email },
-    });
-  };
-
-  const handleConfiguracion = () => {
-    setMenuVisible(false);
-    router.push({
-      pathname: '/configuracion' as any,
-      params: { fullName, rol, email },
-    });
-  };
-
-  const handlePermisos = () => {
-    setMenuVisible(false);
-    router.push({ pathname: '/permisos' as any, params: { fullName, rol, email } });
-  };
-
-  const handleAsistenciaGeneral = () => {
-    setMenuVisible(false);
-    router.push({ pathname: '/asistencia-general' as any, params: { fullName, rol, email } });
-  };
-
-  const capitalize = (value: string) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : value);
-
-  const fecha = capitalize(
-    currentTime.toLocaleDateString('es-PE', {
-      timeZone: 'America/Lima',
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-    }),
-  );
-
-  const hora = formatLimaClock(currentTime);
-
-  const monthLabel = capitalize(currentTime.toLocaleDateString('es-PE', { timeZone: 'America/Lima', month: 'long' }));
+  // ---- Vista ---------------------------------------------------------------
 
   const shiftLabel = (() => {
     if (!shift.entryTime || !shift.exitTime) return null;
     const startHour = Number(shift.entryTime.slice(0, 2));
-    const turno = Number.isFinite(startHour) && startHour >= 12
-      ? tr('Afternoon shift', 'Turno tarde')
-      : tr('Morning shift', 'Turno mañana');
+    const turno = Number.isFinite(startHour) && startHour >= 12 ? tr('Afternoon shift', 'Turno tarde') : tr('Morning shift', 'Turno mañana');
     return `${turno} · ${shift.entryTime} ${tr('to', 'a')} ${shift.exitTime}`;
   })();
 
-  // Calcular estadísticas del mes actual
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-
-  const workdayHistoryLogs = historyLogs.filter((log: any) => {
-    if (!log.date) return false;
-    const logDate = parseAttendanceDate(log.date);
-    const weekday = logDate.getDay();
-    return weekday >= 1 && weekday <= 5;
-  });
-
-  const thisMonthLogs = workdayHistoryLogs.filter((log: any) => {
-    const logDate = parseAttendanceDate(log.date);
-    return logDate.getMonth() === currentMonth && logDate.getFullYear() === currentYear;
-  });
-
-  const totalHours = thisMonthLogs.reduce((acc: number, curr: any) => {
-    const hrs = parseFloat(curr.totalHours || '0');
-    return acc + (isNaN(hrs) ? 0 : hrs);
-  }, 0).toFixed(1);
-
-  const tardanzas = thisMonthLogs.filter((log: any) => hasClockIn(log) && ['tarde', 'tardanza'].includes(String(log.status).toLowerCase())).length;
-  const asistencias = thisMonthLogs.filter((log: any) => hasClockIn(log)).length;
-  const faltas = thisMonthLogs.filter((log: any) => !hasClockIn(log)).length;
-
-  const loadExcelJS = () => {
-    return new Promise<any>((resolve, reject) => {
-      if ((window as any).ExcelJS) {
-        resolve((window as any).ExcelJS);
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js';
-      // Integridad (SRI): si el CDN sirviera otro archivo, el navegador no lo ejecuta.
-      script.integrity = 'sha512-UnrKxsCMN9hFk7M56t4I4ckB4N/2HHi0w/7+B/1JsXIX3DmyBcsGpT3/BsuZMZf+6mAr0vP81syWtfynHJ69JA==';
-      script.crossOrigin = 'anonymous';
-      script.onload = () => resolve((window as any).ExcelJS);
-      script.onerror = (err) => reject(err);
-      document.head.appendChild(script);
-    });
-  };
-
-  const downloadExcel = async () => {
-    if (thisMonthLogs.length === 0) return;
-
-    if (Platform.OS === 'web') {
-      try {
-        const ExcelJS = await loadExcelJS();
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Reporte de Asistencia');
-
-        // Mostrar líneas de cuadrícula
-        worksheet.views = [{ showGridLines: true }];
-
-        // Título del Reporte
-        const titleRow = worksheet.getRow(2);
-        titleRow.getCell(2).value = 'REPORTE DE ASISTENCIA MENSUAL';
-        titleRow.getCell(2).font = { name: 'Segoe UI', size: 16, bold: true, color: { argb: 'FF1E3A5F' } };
-
-        // Información del Colaborador
-        const infoRow1 = worksheet.getRow(4);
-        infoRow1.getCell(2).value = 'Colaborador:';
-        infoRow1.getCell(2).font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF555555' } };
-        infoRow1.getCell(3).value = fullName;
-        infoRow1.getCell(3).font = { name: 'Segoe UI', size: 11 };
-
-        infoRow1.getCell(5).value = 'Periodo:';
-        infoRow1.getCell(5).font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF555555' } };
-
-        const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-        const mesNombre = meses[new Date().getMonth()];
-        const anio = new Date().getFullYear();
-        infoRow1.getCell(6).value = `${mesNombre} ${anio}`;
-        infoRow1.getCell(6).font = { name: 'Segoe UI', size: 11 };
-
-        const infoRow2 = worksheet.getRow(5);
-        infoRow2.getCell(2).value = 'Correo:';
-        infoRow2.getCell(2).font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF555555' } };
-        infoRow2.getCell(3).value = email;
-        infoRow2.getCell(3).font = { name: 'Segoe UI', size: 11 };
-
-        infoRow2.getCell(5).value = 'Cargo:';
-        infoRow2.getCell(5).font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF555555' } };
-        infoRow2.getCell(6).value = cargo || 'Técnico';
-        infoRow2.getCell(6).font = { name: 'Segoe UI', size: 11 };
-
-        // Cabeceras de la Tabla
-        const startRow = 7;
-        const startCol = 2; // Inicia en columna B (2)
-
-        const headerRow = worksheet.getRow(startRow);
-        headerRow.height = 26;
-
-        const columns = [
-          { header: 'Fecha', width: 15 },
-          { header: 'Entrada', width: 14 },
-          { header: 'Salida', width: 14 },
-          { header: 'Horas Trabajadas', width: 20 },
-          { header: 'Estado', width: 16 },
-          { header: 'Observaciones', width: 35 }
-        ];
-
-        columns.forEach((col, i) => {
-          const cell = headerRow.getCell(startCol + i);
-          cell.value = col.header;
-          worksheet.getColumn(startCol + i).width = col.width;
-
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FF1E3A5F' }
-          };
-          cell.font = {
-            name: 'Segoe UI',
-            size: 11,
-            bold: true,
-            color: { argb: 'FFFFFFFF' }
-          };
-          cell.alignment = { vertical: 'middle', horizontal: 'center' };
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FFDDDDDD' } },
-            left: { style: 'thin', color: { argb: 'FFDDDDDD' } },
-            bottom: { style: 'medium', color: { argb: 'FF1E3A5F' } },
-            right: { style: 'thin', color: { argb: 'FFDDDDDD' } }
-          };
-        });
-
-        // Filas de datos
-        thisMonthLogs.forEach((log: any, index: number) => {
-          const rowIndex = startRow + 1 + index;
-          const dataRow = worksheet.getRow(rowIndex);
-          dataRow.height = 22;
-
-          const dateObj = parseAttendanceDate(log.date);
-          const dateStr = dateObj.toLocaleDateString('es-PE');
-          const clockIn = formatHistoryTime(log.clockIn);
-          const clockOut = formatHistoryTime(log.clockOut);
-          const hours = log.totalHours || '0h';
-          const status = log.status || 'Registrado';
-          const obs = log.observations || '';
-
-          const values = [dateStr, clockIn, clockOut, hours, status, obs];
-
-          values.forEach((val, i) => {
-            const cell = dataRow.getCell(startCol + i);
-            cell.value = val;
-            cell.font = { name: 'Segoe UI', size: 10 };
-            cell.alignment = { vertical: 'middle' };
-            cell.border = {
-              top: { style: 'thin', color: { argb: 'FFEAEAEA' } },
-              left: { style: 'thin', color: { argb: 'FFEAEAEA' } },
-              bottom: { style: 'thin', color: { argb: 'FFEAEAEA' } },
-              right: { style: 'thin', color: { argb: 'FFEAEAEA' } }
-            };
-
-            // Alineaciones
-            if ([0, 1, 2, 3].includes(i)) {
-              cell.alignment.horizontal = 'center';
-            }
-
-            // Estilos del Estado con colores específicos
-            if (i === 4) {
-              cell.alignment.horizontal = 'center';
-              cell.font = { name: 'Segoe UI', size: 10, bold: true };
-              if (status === 'Puntual') {
-                cell.font.color = { argb: 'FF2E7D32' }; // Verde
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E9' } };
-              } else if (status === 'Tardanza') {
-                cell.font.color = { argb: 'FFE65100' }; // Naranja
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
-              } else if (status === 'Falta' || status === 'Inasistencia') {
-                cell.font.color = { argb: 'FFC62828' }; // Rojo
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEBEE' } };
-              }
-            }
-          });
-        });
-
-        // Escribir el buffer y descargar como .xlsx
-        const buffer = await workbook.xlsx.writeBuffer();
-        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", `reporte_asistencia_${(fullName || 'empleado').replace(/\s+/g, '_')}.xlsx`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-      } catch (error) {
-        console.error('Error al generar Excel con ExcelJS:', error);
-      }
+  const banner = (() => {
+    if (loading) return { icon: 'sync-circle' as const, text: tr('Registering…', 'Registrando…'), fg: colors.primaryText, bg: colors.primarySoft, border: '#CFDDF6' };
+    if (message) {
+      if (messageTone === 'error') return { icon: 'alert-circle' as const, text: message, fg: colors.red, bg: colors.redSoft, border: '#F7C9CB' };
+      if (messageTone === 'ok') return { icon: 'checkmark-circle' as const, text: message, fg: colors.green, bg: colors.greenSoft, border: colors.greenBorder };
+      return { icon: 'information-circle' as const, text: message, fg: colors.primaryText, bg: colors.primarySoft, border: '#CFDDF6' };
     }
-  };
+    if (completadoHoy) return { icon: 'checkmark-done-circle' as const, text: tr('Day complete. See you tomorrow!', 'Jornada completa. ¡Hasta mañana!'), fg: colors.green, bg: colors.greenSoft, border: colors.greenBorder };
+    if (tieneEntradaHoy) return { icon: 'time' as const, text: `${tr('Shift in progress · clocked in at', 'Jornada en curso · entraste a las')} ${entradaHoy?.hora}`, fg: colors.primaryText, bg: colors.primarySoft, border: '#CFDDF6' };
+    return { icon: 'checkmark-circle' as const, text: tr('Ready to register your attendance', 'Listo para registrar tu asistencia'), fg: colors.green, bg: colors.greenSoft, border: colors.greenBorder };
+  })();
 
-  const loadHtml2Pdf = () => {
-    return new Promise<any>((resolve, reject) => {
-      if ((window as any).html2pdf) {
-        resolve((window as any).html2pdf);
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-      script.integrity = 'sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==';
-      script.crossOrigin = 'anonymous';
-      script.onload = () => resolve((window as any).html2pdf);
-      script.onerror = (err) => reject(err);
-      document.head.appendChild(script);
-    });
-  };
+  const entradaDisabled = loading || tieneEntradaHoy;
+  const salidaDisabled = loading || !tieneEntradaHoy || tieneSalidaHoy;
 
-  const downloadPDF = async () => {
-    if (thisMonthLogs.length === 0) return;
-
-    if (Platform.OS === 'web') {
-      try {
-        const html2pdf = await loadHtml2Pdf();
-
-        const element = document.createElement('div');
-        element.style.padding = '30px';
-        element.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
-        element.style.color = '#333';
-        element.style.backgroundColor = '#ffffff';
-
-        // Observaciones, estado y nombre vienen del servidor: escapados antes de ir a innerHTML.
-        const e = escaparHtml;
-        let tableRows = '';
-        thisMonthLogs.forEach((log: any) => {
-          const dateObj = parseAttendanceDate(log.date);
-          const dateStr = dateObj.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-
-          let statusColor = '#4CAF50';
-          let statusBg = 'rgba(76,175,80,0.1)';
-          if (log.status === 'Tardanza') {
-            statusColor = '#FF9800';
-            statusBg = 'rgba(255,152,0,0.1)';
-          } else if (log.status === 'Falta' || log.status === 'Inasistencia') {
-            statusColor = '#F44336';
-            statusBg = 'rgba(244,67,54,0.1)';
-          }
-
-          tableRows += `
-            <tr style="border-bottom: 1px solid #E0E0E0;">
-              <td style="padding: 10px 12px; font-size: 12px;"><strong>${dateStr}</strong></td>
-              <td style="padding: 10px 12px; font-size: 12px;">${e(formatHistoryTime(log.clockIn))}</td>
-              <td style="padding: 10px 12px; font-size: 12px;">${e(formatHistoryTime(log.clockOut))}</td>
-              <td style="padding: 10px 12px; font-size: 12px;">${e(log.totalHours || '0h')}</td>
-              <td style="padding: 10px 12px; font-size: 12px;">
-                <span style="font-weight: 700; padding: 3px 6px; border-radius: 4px; font-size: 10px; text-transform: uppercase; color: ${statusColor}; background-color: ${statusBg};">
-                  ${e(log.status || 'Registrado')}
-                </span>
-              </td>
-              <td style="padding: 10px 12px; font-size: 12px;">${e(log.observations || '')}</td>
-            </tr>
-          `;
-        });
-
-        element.innerHTML = `
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #208AEF; padding-bottom: 15px; margin-bottom: 25px;">
-            <div style="font-size: 26px; font-weight: 800; color: #1E3A5F; letter-spacing: 1px; font-family: sans-serif;">HWPerú</div>
-            <div style="font-size: 20px; font-weight: 600; color: #555; font-family: sans-serif;">Reporte Mensual de Asistencia</div>
-          </div>
-          <div style="margin-bottom: 30px; line-height: 1.6; font-size: 14px; background-color: #F4F6F9; padding: 15px; border-radius: 8px;">
-            <div><strong>Colaborador:</strong> ${e(fullName)}</div>
-            <div><strong>Correo Electrónico:</strong> ${e(email)}</div>
-            <div><strong>Cargo:</strong> ${e(cargo || 'Técnico')}</div>
-            <div><strong>Fecha de Emisión:</strong> ${limaDateStr(serverNow()).split('-').reverse().join('/')} ${formatLimaTime(serverNow())}</div>
-          </div>
-          <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
-            <thead>
-              <tr style="background-color: #1E3A5F; color: white;">
-                <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; border: 1px solid #1E3A5F;">Fecha</th>
-                <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; border: 1px solid #1E3A5F;">Entrada</th>
-                <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; border: 1px solid #1E3A5F;">Salida</th>
-                <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; border: 1px solid #1E3A5F;">Horas Trab.</th>
-                <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; border: 1px solid #1E3A5F;">Estado</th>
-                <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; border: 1px solid #1E3A5F;">Observaciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${tableRows}
-            </tbody>
-          </table>
-        `;
-
-        const opt = {
-          margin: 10,
-          filename: `reporte_asistencia_${(fullName || 'empleado').replace(/\s+/g, '_')}.pdf`,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
-
-        html2pdf().from(element).set(opt).save();
-      } catch (error) {
-        console.error('Error al generar PDF:', error);
-      }
-    }
-  };
-
-  const renderLocation = (loc: string) => {
-    if (!loc) return null;
-    const coordsReg = /^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/;
-    const isCoords = coordsReg.test(loc.trim());
-
-    return (
-      <TouchableOpacity
-        onPress={() => {
-          if (Platform.OS === 'web') {
-            const query = isCoords ? loc.trim() : encodeURIComponent(loc.trim());
-            window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
-          }
-        }}
-        style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="location" size={14} color="#208AEF" />
-        <Text style={[styles.historyLocation, { color: '#208AEF', textDecorationLine: 'underline', marginTop: 0 }]}>
-          {loc}
-        </Text>
+  const profileCard = (
+    <View style={[styles.card, styles.profileCard]}>
+      <View style={styles.avatarWrap}>
+        <View style={styles.avatar}>
+          {profilePhoto
+            ? <Image source={{ uri: profilePhoto }} style={styles.avatarImage} />
+            : <Ionicons name="person" size={36} color={colors.primary} />}
+        </View>
+        <View style={styles.onlineDot} />
+      </View>
+      <View style={styles.profileInfo}>
+        <Text style={styles.profileName} numberOfLines={2}>{fullName}</Text>
+        {!!cargo && (
+          <View style={styles.profileMetaRow}>
+            <Ionicons name="briefcase" size={15} color={colors.muted} />
+            <Text style={styles.profileMeta} numberOfLines={1}>{cargo}</Text>
+          </View>
+        )}
+        {!!area && (
+          <View style={styles.profileMetaRow}>
+            <Ionicons name="business" size={15} color={colors.muted} />
+            <Text style={styles.profileMeta} numberOfLines={1}>{tr('Area', 'Área')}: {area}</Text>
+          </View>
+        )}
+      </View>
+      <TouchableOpacity style={styles.profileButton} onPress={() => goToTab('perfil', session)} activeOpacity={0.75}>
+        <Text style={styles.profileButtonText}>{tr('View profile', 'Ver Perfil')}</Text>
+        <Ionicons name="chevron-forward" size={15} color={colors.primaryText} />
       </TouchableOpacity>
-    );
-  };
+    </View>
+  );
 
-  return (
-    <SafeAreaView style={styles.wrapper} edges={['top']}>
-      <View style={[styles.header, isDesktop && styles.desktopHeader, isDesktop && styles.desktopHeaderPanel]}>
-        <View>
-          <Text style={[styles.greeting, isDesktop && styles.desktopGreeting]}>
-            {tr('Hello', 'Hola')}, {isDesktop ? fullName : String(fullName || '').trim().split(/\s+/)[0]}
-          </Text>
-          {isDesktop
-            ? (cargo ? <Text style={styles.roleTag}>{tr('Position', 'Cargo')}: {cargo}</Text> : null)
-            : <Text style={styles.headerDate}>{fecha}</Text>}
+  const clockCard = (
+    <View style={styles.clockCard}>
+      <View style={styles.clockIconRow}>
+        <View style={styles.clockLine} />
+        <View style={styles.clockIcon}>
+          <Ionicons name="time-outline" size={44} color={colors.primary} />
         </View>
+        <View style={styles.clockLine} />
+      </View>
+      <Text style={styles.clock} adjustsFontSizeToFit numberOfLines={1}>{limaClock24(now)}</Text>
+      <Text style={styles.clockDate}>{formatClockDate(now, language)}</Text>
+      {!!shiftLabel && <Text style={styles.clockShift}>{shiftLabel}</Text>}
+    </View>
+  );
 
-        <View style={styles.menuArea}>
-          <TouchableOpacity style={styles.menuButton} onPress={toggleProfileMenu}>
-            <View ref={menuButtonRef} collapsable={false} style={styles.avatarButton}>
-              {profilePhoto
-                ? <Image source={{ uri: profilePhoto }} style={styles.avatarPhoto} />
-                : <Ionicons name="person-outline" size={18} color="#208AEF" />}
-            </View>
-          </TouchableOpacity>
-
-          <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
-            <Pressable style={styles.overlay} onPress={() => setMenuVisible(false)}>
-              <Pressable style={[styles.dropdown, menuPosition]} onPress={(event) => event.stopPropagation()}>
-            <TouchableOpacity style={styles.dropdownItem} onPress={handlePerfil}>
-              <Ionicons name="person-outline" size={18} color="#1A1D29" />
-              <Text style={styles.dropdownText}>{tr('My profile', 'Mi perfil')}</Text>
-            </TouchableOpacity>
-
-            <View style={styles.dropdownDivider} />
-            <TouchableOpacity style={styles.dropdownItem} onPress={handlePermisos}>
-              <Ionicons name="calendar-outline" size={18} color="#1A1D29" />
-              <Text style={styles.dropdownText}>{tr('My requests', 'Mis solicitudes')}</Text>
-            </TouchableOpacity>
-
-            {['ADMIN', 'SUPER_ADMIN'].includes(String(rol || '').toUpperCase()) && (
-              <>
-                <View style={styles.dropdownDivider} />
-                <TouchableOpacity style={styles.dropdownItem} onPress={handleAsistenciaGeneral}>
-                  <Ionicons name="people-outline" size={18} color="#1A1D29" />
-                  <Text style={styles.dropdownText}>{tr('General attendance', 'Asistencia general')}</Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            {rol === 'SUPER_ADMIN' && (
-              <>
-                <View style={styles.dropdownDivider} />
-                <TouchableOpacity style={styles.dropdownItem} onPress={handleConfiguracion}>
-                  <Ionicons name="settings-outline" size={18} color="#1A1D29" />
-                  <Text style={styles.dropdownText}>{tr('Settings', 'Configuración')}</Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            <View style={styles.dropdownDivider} />
-
-            <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
-              <Ionicons name="log-out-outline" size={18} color="#E53935" />
-              <Text style={[styles.dropdownText, styles.logoutText]}>{tr('Sign out', 'Cerrar sesión')}</Text>
-            </TouchableOpacity>
-              </Pressable>
-            </Pressable>
-          </Modal>
-        </View>
+  const markSection = (
+    <>
+      <View style={[styles.banner, { backgroundColor: banner.bg, borderColor: banner.border }]}>
+        <Ionicons name={banner.icon} size={24} color={banner.fg} />
+        <Text style={[styles.bannerText, { color: banner.fg }]}>{banner.text}</Text>
       </View>
 
-      <Modal visible={showPushPrompt} transparent animationType="fade">
-        <View style={styles.pushPermissionOverlay}>
-          <View style={styles.pushPermissionCard}>
-            <View style={styles.pushPermissionIcon}><Ionicons name="notifications" size={30} color="#72C1FF" /></View>
-            <Text style={styles.pushPermissionTitle}>Activa tus alertas de asistencia</Text>
-            <Text style={styles.pushPermissionText}>Recibirás una notificación en este dispositivo cuando terminen tus 10 minutos de tolerancia, aunque la aplicación esté cerrada.</Text>
-            {!!pushMessage && <Text style={styles.pushPermissionMessage}>{pushMessage}</Text>}
-            <TouchableOpacity style={styles.pushPermissionButton} onPress={activateAttendanceNotifications} disabled={pushActivating}>
-              <Text style={styles.pushPermissionButtonText}>{pushActivating ? 'Activando...' : 'Permitir notificaciones'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowPushPrompt(false)} style={styles.pushPermissionLater}><Text style={styles.pushPermissionLaterText}>Ahora no</Text></TouchableOpacity>
+      <View style={styles.actions}>
+        <TouchableOpacity
+          style={[styles.action, styles.actionIn, entradaDisabled && styles.actionDisabled]}
+          onPress={() => startMark('Entrada')}
+          disabled={entradaDisabled}
+          activeOpacity={0.85}
+          accessibilityLabel={tr('Clock in', 'Marcar entrada')}
+        >
+          <Ionicons name="enter-outline" size={34} color="#FFFFFF" />
+          <Text style={styles.actionText}>{tr('Clock\nin', 'Marcar\nEntrada')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.action, styles.actionOut, salidaDisabled && styles.actionDisabled]}
+          onPress={() => startMark('Salida')}
+          disabled={salidaDisabled}
+          activeOpacity={0.85}
+          accessibilityLabel={tr('Clock out', 'Marcar salida')}
+        >
+          <Ionicons name="exit-outline" size={34} color="#FFFFFF" />
+          <Text style={styles.actionText}>{tr('Clock\nout', 'Marcar\nSalida')}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Alta facial pendiente: no bloquea el marcado con PIN, solo lo sugiere */}
+      {faceEnrolled === false && (
+        <TouchableOpacity style={styles.enrollCard} onPress={openEnrollmentFlow} disabled={loading} activeOpacity={0.8}>
+          <View style={styles.enrollIcon}>
+            <Ionicons name="scan-outline" size={20} color={colors.amber} />
           </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.enrollTitle}>{tr('Register your face', 'Registra tu rostro')}</Text>
+            <Text style={styles.enrollSubtitle}>{tr('Pending · takes 30 seconds', 'Pendiente · toma 30 segundos')}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+        </TouchableOpacity>
+      )}
+    </>
+  );
+
+  const historyCard = (
+    <View style={styles.card}>
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleRow}>
+          <Ionicons name="time-outline" size={24} color={colors.text} />
+          <Text style={styles.sectionTitle}>{tr('Attendance history', 'Historial de Marcaciones')}</Text>
         </View>
-      </Modal>
+        <TouchableOpacity style={styles.linkButton} onPress={() => goToTab('historial', session)} activeOpacity={0.75}>
+          <Text style={styles.linkButtonText}>{tr('View all', 'Ver todo')}</Text>
+          <Ionicons name="chevron-forward" size={15} color={colors.primaryText} />
+        </TouchableOpacity>
+      </View>
+      {recentMarks.length === 0 ? (
+        <View style={styles.empty}>
+          <Ionicons name="calendar-clear-outline" size={28} color={colors.faint} />
+          <Text style={styles.emptyTitle}>{tr('No records yet', 'Aún no hay marcaciones')}</Text>
+          <Text style={styles.emptyHint}>{tr('Your clock-ins and clock-outs will show up here', 'Tus entradas y salidas aparecerán aquí')}</Text>
+        </View>
+      ) : (
+        <MarkTimeline marks={recentMarks} showLocation />
+      )}
+    </View>
+  );
 
-      <ScrollView contentContainerStyle={[styles.content, isDesktop && styles.desktopContent]}>
-        {isDesktop ? (
-          <View style={styles.desktopContainer}>
-            {/* Columna Izquierda: Reloj y Botón de Marcación, Historial de hoy */}
-            <View style={styles.desktopLeftCol}>
-              <View style={[styles.clockCard, styles.desktopClockCard, { marginTop: 0, maxWidth: '100%' }]}>
-                <Text style={styles.date}>{fecha}</Text>
-                <Text style={[styles.clock, styles.desktopClock]}>{hora}</Text>
-
-                {faceEnrolled === false && (
-                  <TouchableOpacity
-                    style={[styles.markButton, styles.desktopMarkButton, { backgroundColor: '#173A5E', marginBottom: 10 }, loading && styles.markButtonDisabled]}
-                    onPress={openEnrollmentFlow}
-                    disabled={loading}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.markButtonText}>{tr('Register my face', 'Registrar mi rostro')}</Text>
-                  </TouchableOpacity>
-                )}
-
-                <TouchableOpacity
-                  style={[styles.markButton, styles.desktopMarkButton, (loading || completadoHoy) && styles.markButtonDisabled]}
-                  onPress={openCameraFlow}
-                  disabled={loading || completadoHoy}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.markButtonText}>
-                    {loading
-                      ? 'Registrando...'
-                      : completadoHoy
-                        ? tr('Attendance completed today', 'Marcación completada hoy')
-                        : siguienteTipo === 'Entrada' ? tr('Clock in', 'Marcar Entrada') : tr('Clock out', 'Marcar Salida')}
-                  </Text>
-                </TouchableOpacity>
-
-                {message !== '' && <Text style={styles.message}>{message}</Text>}
-              </View>
-
-              <View style={[styles.historySection, styles.desktopPanel, { marginTop: 24 }]}>
-                <Text style={styles.historyTitle}>{tr("Today's history", 'Historial de hoy')}</Text>
-
-                {hoyMarcaciones.length === 0 ? (
-                  <View style={styles.emptyCard}>
-                    <Ionicons name="time-outline" size={22} color="#A0A5B1" />
-                    <Text style={styles.emptyText}>{tr('No attendance records yet today', 'Aún no hay marcaciones registradas hoy')}</Text>
-                  </View>
-                ) : (
-                  [...hoyMarcaciones].reverse().map((m, index) => (
-                    <View key={m.id || index} style={styles.historyItem}>
-                      <View
-                        style={[
-                          styles.historyDot,
-                          m.tipo === 'Entrada' ? styles.dotIn : styles.dotOut,
-                        ]}
-                      />
-                      <View style={styles.historyInfo}>
-                        <Text style={styles.historyType}>{m.tipo}</Text>
-                        <Text style={styles.historyTime}>{m.hora}</Text>
-                        {renderLocation(m.ubicacion)}
-                      </View>
-                    </View>
-                  ))
-                )}
-              </View>
-            </View>
-
-            <View style={styles.desktopRightCol}>
-              <View style={[styles.statsSection, styles.desktopPanel, { marginTop: 0 }]}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <Text style={[styles.historyTitle, { marginBottom: 0 }]}>{tr('Monthly Summary', 'Resumen del Mes')}</Text>
-                  {Platform.OS === 'web' && historyLogs.length > 0 && (
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <TouchableOpacity
-                        onPress={downloadExcel}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          backgroundColor: '#1B5E20',
-                          paddingHorizontal: 12,
-                          paddingVertical: 6,
-                          borderRadius: 8,
-                          gap: 6,
-                        }}
-                        activeOpacity={0.75}
-                      >
-                        <Ionicons name="document-text-outline" size={14} color="#A5D6A7" />
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#A5D6A7' }}>Excel</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={downloadPDF}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          backgroundColor: '#B71C1C',
-                          paddingHorizontal: 12,
-                          paddingVertical: 6,
-                          borderRadius: 8,
-                          gap: 6,
-                        }}
-                        activeOpacity={0.75}
-                      >
-                        <Ionicons name="document-outline" size={14} color="#EF9A9A" />
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#EF9A9A' }}>PDF</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.statsRow}>
-                  <View style={styles.statCard}>
-                    <Ionicons name="time-outline" size={16} color="#208AEF" />
-                    <Text style={styles.statLabel}>{tr('Monthly Hours', 'Horas del Mes')}</Text>
-                    <Text style={styles.statValue}>{totalHours}h</Text>
-                  </View>
-
-                  <View style={styles.statCard}>
-                    <Ionicons name="calendar-outline" size={16} color="#66BB6A" />
-                    <Text style={styles.statLabel}>{tr('Attendances', 'Asistencias')}</Text>
-                    <Text style={[styles.statValue, styles.statValueGood]}>{asistencias}</Text>
-                  </View>
-
-                  <View style={styles.statCard}>
-                    <Ionicons name="warning-outline" size={16} color="#FFA726" />
-                    <Text style={styles.statLabel}>{tr('Late arrivals', 'Tardanzas')}</Text>
-                    <Text style={[styles.statValue, tardanzas > 0 && styles.statValueWarn]}>{tardanzas}</Text>
-                  </View>
-
-                  <View style={styles.statCard}>
-                    <Ionicons name="close-circle-outline" size={16} color="#EF5350" />
-                    <Text style={styles.statLabel}>{tr('Absences', 'Faltas')}</Text>
-                    <Text style={[styles.statValue, faltas > 0 && styles.statValueAbsent]}>{faltas}</Text>
-                  </View>
-                </View>
-              </View>
-
-              {workdayHistoryLogs.length > 0 && (
-                <View style={[styles.historySection, styles.desktopPanel, { marginTop: 24 }]}>
-                  <Text style={styles.historyTitle}>{tr('Recent History (Last days)', 'Historial Reciente (Últimos días)')}</Text>
-
-                  {workdayHistoryLogs.slice(0, 5).map((log: any, idx: number) => {
-                    const dateObj = parseAttendanceDate(log.date);
-                    const formattedDate = dateObj.toLocaleDateString('es-PE', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                    });
-
-                    let badgeStyle = styles.badgePuntual;
-                    let textStyle = styles.textPuntual;
-                    if (log.status === 'Tardanza') {
-                      badgeStyle = styles.badgeTardanza;
-                      textStyle = styles.textTardanza;
-                    } else if (log.status === 'Falta' || log.status === 'Inasistencia') {
-                      badgeStyle = styles.badgeFalta;
-                      textStyle = styles.textFalta;
-                    }
-
-                    return (
-                      <View key={idx} style={styles.recentItem}>
-                        <View style={styles.recentItemHeader}>
-                          <Text style={styles.recentDate}>{formattedDate}</Text>
-                          <View style={[styles.statusBadge, badgeStyle]}>
-                            <Text style={[styles.badgeText, textStyle]}>{log.status || 'Registrado'}</Text>
-                          </View>
-                        </View>
-                        <View style={styles.recentItemDetails}>
-                          <Text style={styles.recentTimeText}>
-                            🚪 Ent: {formatHistoryTime(log.clockIn)} | 🚪 Sal: {formatHistoryTime(log.clockOut)}
-                          </Text>
-                          <Text style={styles.recentHours}>{log.totalHours || '0h'}</Text>
-                        </View>
-                      </View>
-                    );
-                  })}
-
-                  {workdayHistoryLogs.length > 5 && (
-                    <TouchableOpacity
-                      style={styles.viewFullHistoryBtn}
-                      onPress={() => setShowFullHistory(true)}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name="calendar-outline" size={16} color="#208AEF" />
-                      <Text style={styles.viewFullHistoryText}>Ver historial completo ({workdayHistoryLogs.length} registros)</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-            </View>
+  return (
+    <>
+      <TabScreen
+        title={tr('Attendance Record', 'Registro de Asistencia')}
+        active="inicio"
+        maxWidth={isWide ? WIDE_MAX_WIDTH : undefined}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        {...session}
+      >
+        {isWide ? (
+          <View style={styles.wideRow}>
+            <View style={styles.wideCol}>{profileCard}{clockCard}{markSection}</View>
+            <View style={styles.wideCol}>{historyCard}</View>
           </View>
         ) : (
           <>
-            {/* Tarjeta principal: estado del dia, reloj, turno y las dos formas de marcar */}
-            <View style={styles.heroCard}>
-              <View style={[
-                styles.statusPill,
-                completadoHoy ? styles.statusPillDone : tieneEntradaHoy ? styles.statusPillActive : styles.statusPillPending,
-              ]}>
-                <Ionicons
-                  name={completadoHoy ? 'checkmark-circle' : tieneEntradaHoy ? 'ellipse' : 'alert-circle'}
-                  size={12}
-                  color={completadoHoy ? '#86E5A8' : tieneEntradaHoy ? '#7EC3FF' : '#FFB86B'}
-                />
-                <Text style={[
-                  styles.statusPillText,
-                  completadoHoy ? styles.statusPillTextDone : tieneEntradaHoy ? styles.statusPillTextActive : styles.statusPillTextPending,
-                ]}>
-                  {completadoHoy
-                    ? tr('Day complete', 'Jornada completa')
-                    : tieneEntradaHoy
-                      ? tr('Shift in progress', 'Jornada en curso')
-                      : tr('Not clocked in today', 'Sin marcar hoy')}
-                </Text>
-              </View>
-
-              <Text style={styles.heroClock}>{hora}</Text>
-              {!!shiftLabel && <Text style={styles.heroShift}>{shiftLabel}</Text>}
-
-              <TouchableOpacity
-                style={[styles.primaryAction, (loading || completadoHoy) && styles.primaryActionDisabled]}
-                onPress={openPinPrompt}
-                disabled={loading || completadoHoy}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.primaryActionText}>
-                  {loading
-                    ? tr('Registering...', 'Registrando...')
-                    : completadoHoy
-                      ? tr('Attendance completed today', 'Marcación completada hoy')
-                      : siguienteTipo === 'Entrada'
-                        ? tr('Clock in', 'Marcar entrada')
-                        : tr('Clock out', 'Marcar salida')}
-                </Text>
-              </TouchableOpacity>
-
-              {/* Cada camino se ofrece solo si el empleado puede usarlo */}
-              {faceEnrolled === true && !completadoHoy && (
-                <TouchableOpacity
-                  style={styles.secondaryAction}
-                  onPress={openCameraFlow}
-                  disabled={loading}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="scan-outline" size={15} color="#7EC3FF" />
-                  <Text style={styles.secondaryActionText}>
-                    {tr('Verify with face recognition', 'Marcar con reconocimiento facial')}
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-
-              {message !== '' && <Text style={styles.message}>{message}</Text>}
-            </View>
-
-            {/* Alta facial pendiente: ya no bloquea el marcado, solo lo sugiere */}
-            {faceEnrolled === false && (
-              <TouchableOpacity
-                style={styles.enrollCard}
-                onPress={openEnrollmentFlow}
-                disabled={loading}
-                activeOpacity={0.8}
-              >
-                <View style={styles.enrollIcon}>
-                  <Ionicons name="scan-outline" size={19} color="#FFB86B" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.enrollTitle}>{tr('Register your face', 'Registra tu rostro')}</Text>
-                  <Text style={styles.enrollSubtitle}>
-                    {tr('Pending · takes 30 seconds', 'Pendiente · toma 30 segundos')}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#6E8297" />
-              </TouchableOpacity>
-            )}
-
-            {/* Resumen del mes */}
-            <View style={styles.summarySection}>
-              <View style={styles.summaryHeader}>
-                <Text style={styles.sectionTitle}>
-                  {tr('Summary for', 'Resumen de')} {monthLabel}
-                </Text>
-                {Platform.OS === 'web' && historyLogs.length > 0 && (
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <TouchableOpacity onPress={downloadExcel} style={styles.exportChip} activeOpacity={0.75}>
-                      <Ionicons name="document-text-outline" size={12} color="#A5D6A7" />
-                      <Text style={[styles.exportChipText, { color: '#A5D6A7' }]}>Excel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={downloadPDF} style={styles.exportChip} activeOpacity={0.75}>
-                      <Ionicons name="document-outline" size={12} color="#EF9A9A" />
-                      <Text style={[styles.exportChipText, { color: '#EF9A9A' }]}>PDF</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.summaryRow}>
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summaryValue}>
-                    {totalHours}<Text style={styles.summaryUnit}>h</Text>
-                  </Text>
-                  <Text style={styles.summaryLabel}>{tr('Hours', 'Horas')}</Text>
-                </View>
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summaryValue}>{asistencias}</Text>
-                  <Text style={styles.summaryLabel}>{tr('Attendances', 'Asistencias')}</Text>
-                </View>
-                <View style={styles.summaryCard}>
-                  <Text style={[styles.summaryValue, tardanzas > 0 && styles.summaryValueWarn]}>{tardanzas}</Text>
-                  <Text style={styles.summaryLabel}>{tr('Late', 'Tardanzas')}</Text>
-                </View>
-                <View style={styles.summaryCard}>
-                  <Text style={[styles.summaryValue, faltas > 0 && styles.summaryValueBad]}>{faltas}</Text>
-                  <Text style={styles.summaryLabel}>{tr('Absences', 'Faltas')}</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Hoy */}
-            <View style={styles.todaySection}>
-              <Text style={styles.sectionTitle}>{tr('Today', 'Hoy')}</Text>
-
-              {hoyMarcaciones.length === 0 ? (
-                <View style={styles.todayEmpty}>
-                  <Text style={styles.todayEmptyTitle}>
-                    {tr('You have not clocked in yet', 'Aún no marcas entrada')}
-                  </Text>
-                  <Text style={styles.todayEmptyHint}>
-                    {tr("Today's records will show up here", 'Tus marcaciones de hoy aparecerán aquí')}
-                  </Text>
-                </View>
-              ) : (
-                [...hoyMarcaciones].reverse().map((m, index) => (
-                  <View key={m.id || index} style={styles.historyItem}>
-                    <View style={[styles.historyDot, m.tipo === 'Entrada' ? styles.dotIn : styles.dotOut]} />
-                    <View style={styles.historyInfo}>
-                      <Text style={styles.historyType}>{m.tipo}</Text>
-                      <Text style={styles.historyTime}>{m.hora}</Text>
-                      {renderLocation(m.ubicacion)}
-                    </View>
-                  </View>
-                ))
-              )}
-            </View>
-
-            {workdayHistoryLogs.length > 0 && (
-              <View style={[styles.todaySection, { marginBottom: 20 }]}>
-                <Text style={styles.sectionTitle}>{tr('Recent history', 'Historial reciente')}</Text>
-
-                {workdayHistoryLogs.slice(0, 5).map((log: any, idx: number) => {
-                  const dateObj = parseAttendanceDate(log.date);
-                  const formattedDate = dateObj.toLocaleDateString('es-PE', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  });
-
-                  let badgeStyle = styles.badgePuntual;
-                  let textStyle = styles.textPuntual;
-                  if (log.status === 'Tardanza') {
-                    badgeStyle = styles.badgeTardanza;
-                    textStyle = styles.textTardanza;
-                  } else if (log.status === 'Falta' || log.status === 'Inasistencia') {
-                    badgeStyle = styles.badgeFalta;
-                    textStyle = styles.textFalta;
-                  }
-
-                  return (
-                    <View key={idx} style={styles.recentItem}>
-                      <View style={styles.recentItemHeader}>
-                        <Text style={styles.recentDate}>{formattedDate}</Text>
-                        <View style={[styles.statusBadge, badgeStyle]}>
-                          <Text style={[styles.badgeText, textStyle]}>{log.status || 'Registrado'}</Text>
-                        </View>
-                      </View>
-                      <View style={styles.recentItemDetails}>
-                        <Text style={styles.recentTimeText}>
-                          {formatHistoryTime(log.clockIn)} → {formatHistoryTime(log.clockOut)}
-                        </Text>
-                        <Text style={styles.recentHours}>{log.totalHours || '0h'}</Text>
-                      </View>
-                    </View>
-                  );
-                })}
-
-                {workdayHistoryLogs.length > 5 && (
-                  <TouchableOpacity
-                    style={styles.viewFullHistoryBtn}
-                    onPress={() => setShowFullHistory(true)}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="calendar-outline" size={16} color="#208AEF" />
-                    <Text style={styles.viewFullHistoryText}>
-                      {tr('View full history', 'Ver historial completo')} ({workdayHistoryLogs.length})
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
+            {profileCard}
+            {clockCard}
+            {markSection}
+            {historyCard}
           </>
         )}
-      </ScrollView>
+      </TabScreen>
 
-      <Modal
-        visible={pinPromptVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPinPromptVisible(false)}
-      >
-        <View style={styles.pushPermissionOverlay}>
-          <View style={styles.pushPermissionCard}>
-            <View style={styles.pushPermissionIcon}>
-              <Ionicons name="keypad-outline" size={26} color="#7EC3FF" />
+      {/* ¿Con qué se verifica la marcación? */}
+      <Modal visible={methodPickerVisible} transparent animationType="fade" onRequestClose={() => setMethodPickerVisible(false)}>
+        <Pressable style={styles.overlay} onPress={() => setMethodPickerVisible(false)}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.modalIcon, { backgroundColor: siguienteTipo === 'Entrada' ? colors.primarySoft : colors.orangeSoft }]}>
+              <Ionicons name={siguienteTipo === 'Entrada' ? 'enter-outline' : 'exit-outline'} size={28} color={siguienteTipo === 'Entrada' ? colors.primary : colors.orange} />
             </View>
-            <Text style={styles.pushPermissionTitle}>
-              {tr('Enter your PIN', 'Ingresa tu PIN')}
-            </Text>
-            <Text style={styles.pushPermissionText}>
+            <Text style={styles.modalTitle}>{siguienteTipo === 'Entrada' ? tr('Clock in', 'Marcar entrada') : tr('Clock out', 'Marcar salida')}</Text>
+            <Text style={styles.modalText}>{tr('How do you want to verify your identity?', '¿Cómo quieres verificar tu identidad?')}</Text>
+
+            {hasAttendancePin && (
+              <TouchableOpacity style={styles.option} onPress={openPinPrompt} activeOpacity={0.8}>
+                <View style={[styles.optionIcon, { backgroundColor: colors.primarySoft }]}>
+                  <Ionicons name="keypad-outline" size={21} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.optionTitle}>{tr('Attendance PIN', 'PIN de asistencia')}</Text>
+                  <Text style={styles.optionHint}>{tr('Your 6 digits', 'Tus 6 dígitos')}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.faint} />
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity style={styles.option} onPress={faceEnrolled === false ? openEnrollmentFlow : openCameraFlow} activeOpacity={0.8}>
+              <View style={[styles.optionIcon, { backgroundColor: colors.greenSoft }]}>
+                <Ionicons name="scan-outline" size={21} color={colors.green} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.optionTitle}>
+                  {faceEnrolled === false ? tr('Register my face', 'Registrar mi rostro') : tr('Face recognition', 'Reconocimiento facial')}
+                </Text>
+                <Text style={styles.optionHint}>
+                  {faceEnrolled === false ? tr('Required before marking with your face', 'Necesario antes de marcar con tu rostro') : tr('Take a selfie', 'Tómate una foto')}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.faint} />
+            </TouchableOpacity>
+
+            {!hasAttendancePin && faceEnrolled === false && (
+              <Text style={styles.modalMessage}>{tr('Or ask your administrator for an attendance PIN.', 'O solicita a administración tu PIN de asistencia.')}</Text>
+            )}
+
+            <TouchableOpacity onPress={() => setMethodPickerVisible(false)} style={styles.modalLater}>
+              <Text style={styles.modalLaterText}>{tr('Cancel', 'Cancelar')}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* PIN */}
+      <Modal visible={pinPromptVisible} transparent animationType="fade" onRequestClose={() => setPinPromptVisible(false)}>
+        <View style={styles.overlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIcon}>
+              <Ionicons name="keypad-outline" size={26} color={colors.primary} />
+            </View>
+            <Text style={styles.modalTitle}>{tr('Enter your PIN', 'Ingresa tu PIN')}</Text>
+            <Text style={styles.modalText}>
               {siguienteTipo === 'Entrada'
                 ? tr('Confirm your clock in with your attendance PIN.', 'Confirma tu entrada con tu PIN de asistencia.')
                 : tr('Confirm your clock out with your attendance PIN.', 'Confirma tu salida con tu PIN de asistencia.')}
             </Text>
-
             <TextInput
               value={pinValue}
               onChangeText={(text: string) => setPinValue(text.replace(/[^0-9]/g, '').slice(0, 6))}
               placeholder="••••••"
-              placeholderTextColor="#5B7391"
+              placeholderTextColor={colors.faint}
               keyboardType="number-pad"
               secureTextEntry
               maxLength={6}
-              // Evita que el Gestor de contraseñas de Google lo tome por una
-              // contraseña y ofrezca guardarla o avise de filtraciones.
+              // Evita que el gestor de contraseñas lo tome por una contraseña.
               autoComplete="one-time-code"
               textContentType="oneTimeCode"
               importantForAutofill="no"
@@ -1483,105 +776,40 @@ export default function Dashboard() {
               style={styles.pinInput}
               onSubmitEditing={confirmPinMark}
             />
-
             <TouchableOpacity
-              style={[styles.pushPermissionButton, pinValue.trim().length !== 6 && styles.primaryActionDisabled]}
+              style={[styles.modalButton, siguienteTipo === 'Salida' && { backgroundColor: colors.orange }, pinValue.trim().length !== 6 && styles.actionDisabled]}
               onPress={confirmPinMark}
               disabled={pinValue.trim().length !== 6}
               activeOpacity={0.85}
             >
-              <Text style={styles.pushPermissionButtonText}>
-                {siguienteTipo === 'Entrada' ? tr('Clock in', 'Marcar entrada') : tr('Clock out', 'Marcar salida')}
-              </Text>
+              <Text style={styles.modalButtonText}>{siguienteTipo === 'Entrada' ? tr('Clock in', 'Marcar entrada') : tr('Clock out', 'Marcar salida')}</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setPinPromptVisible(false)}
-              style={styles.pushPermissionLater}
-            >
-              <Text style={styles.pushPermissionLaterText}>{tr('Cancel', 'Cancelar')}</Text>
+            <TouchableOpacity onPress={() => setPinPromptVisible(false)} style={styles.modalLater}>
+              <Text style={styles.modalLaterText}>{tr('Cancel', 'Cancelar')}</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      <Modal visible={showFullHistory} transparent animationType="slide">
-        <View style={styles.fullHistoryOverlay}>
-          <View style={styles.fullHistoryContainer}>
-            <View style={styles.fullHistoryHeader}>
-              <Text style={styles.fullHistoryTitle}>{tr('Complete Monthly History', 'Historial Completo del Mes')}</Text>
-              <TouchableOpacity
-                onPress={() => setShowFullHistory(false)}
-                style={styles.fullHistoryCloseBtn}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="close" size={22} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.fullHistorySummary}>
-              <View style={styles.fullHistorySummaryItem}>
-                <Ionicons name="time-outline" size={14} color="#208AEF" />
-                <Text style={styles.fullHistorySummaryText}>{totalHours}h trabajadas</Text>
-              </View>
-              <View style={styles.fullHistorySummaryItem}>
-                <Ionicons name="checkmark-circle-outline" size={14} color="#66BB6A" />
-                <Text style={styles.fullHistorySummaryText}>{asistencias} asistencias</Text>
-              </View>
-              <View style={styles.fullHistorySummaryItem}>
-                <Ionicons name="warning-outline" size={14} color="#FFA726" />
-                <Text style={styles.fullHistorySummaryText}>{tardanzas} tardanzas</Text>
-              </View>
-              <View style={styles.fullHistorySummaryItem}>
-                <Ionicons name="close-circle-outline" size={14} color="#EF5350" />
-                <Text style={styles.fullHistorySummaryText}>{faltas} faltas</Text>
-              </View>
-            </View>
-
-            <ScrollView style={styles.fullHistoryScroll} showsVerticalScrollIndicator={false}>
-              {thisMonthLogs.map((log: any, idx: number) => {
-                const dateObj = parseAttendanceDate(log.date);
-                const formattedDate = dateObj.toLocaleDateString('es-PE', {
-                  weekday: 'short',
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                });
-
-                let badgeStyle = styles.badgePuntual;
-                let textStyle = styles.textPuntual;
-                if (log.status === 'Tardanza') {
-                  badgeStyle = styles.badgeTardanza;
-                  textStyle = styles.textTardanza;
-                } else if (log.status === 'Falta' || log.status === 'Inasistencia') {
-                  badgeStyle = styles.badgeFalta;
-                  textStyle = styles.textFalta;
-                }
-
-                return (
-                  <View key={idx} style={styles.recentItem}>
-                    <View style={styles.recentItemHeader}>
-                      <Text style={styles.recentDate}>{formattedDate}</Text>
-                      <View style={[styles.statusBadge, badgeStyle]}>
-                        <Text style={[styles.badgeText, textStyle]}>{log.status || 'Registrado'}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.recentItemDetails}>
-                      <Text style={styles.recentTimeText}>
-                        🚪 Ent: {formatHistoryTime(log.clockIn)} | 🚪 Sal: {formatHistoryTime(log.clockOut)}
-                      </Text>
-                      <Text style={styles.recentHours}>{log.totalHours || '0h'}</Text>
-                    </View>
-                  </View>
-                );
-              })}
-              {thisMonthLogs.length === 0 && (
-                <View style={styles.emptyCard}>
-                  <Ionicons name="calendar-outline" size={28} color="#A0A5B1" />
-                  <Text style={styles.emptyText}>{tr('No records this month', 'No hay registros este mes')}</Text>
-                </View>
+      {/* Avisos push en la web */}
+      <Modal visible={showPushPrompt} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIcon}><Ionicons name="notifications" size={28} color={colors.primary} /></View>
+            <Text style={styles.modalTitle}>{tr('Turn on attendance alerts', 'Activa tus alertas de asistencia')}</Text>
+            <Text style={styles.modalText}>
+              {tr(
+                'You will get a notification on this device when your 10-minute grace period ends, even if the app is closed.',
+                'Recibirás una notificación en este dispositivo cuando terminen tus 10 minutos de tolerancia, aunque la aplicación esté cerrada.',
               )}
-            </ScrollView>
+            </Text>
+            {!!pushMessage && <Text style={styles.modalMessage}>{pushMessage}</Text>}
+            <TouchableOpacity style={styles.modalButton} onPress={activateAttendanceNotifications} disabled={pushActivating}>
+              <Text style={styles.modalButtonText}>{pushActivating ? tr('Enabling…', 'Activando…') : tr('Allow notifications', 'Permitir notificaciones')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowPushPrompt(false)} style={styles.modalLater}>
+              <Text style={styles.modalLaterText}>{tr('Not now', 'Ahora no')}</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1593,6 +821,6 @@ export default function Dashboard() {
         onCancel={() => setCameraVisible(false)}
         onConfirm={cameraPurpose === 'enrollment' ? handleEnrollFace : handleMarcar}
       />
-    </SafeAreaView>
+    </>
   );
 }

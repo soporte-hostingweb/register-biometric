@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -8,15 +8,19 @@ import {
   Modal,
   Platform,
   Pressable,
-  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
-import { apiFetch } from '../services/api';
+import TabScreen from '../components/TabScreen';
+import { apiFetch, logoutFromApi } from '../services/api';
 import { useLanguage } from '../services/language';
+import { goToTab, isAdminRole, isSuperAdminRole, openScreen } from '../services/session-params';
+import { getWebPushPermission, subscribeToWebPush, supportsWebPush } from '../services/web-push';
+import { cardShadow, colors, WIDE_MAX_WIDTH } from '../styles/theme';
 
 type AuthorizedDeviceUser = {
   userId: number;
@@ -49,23 +53,52 @@ type AttendanceEvidence = {
   captureAngle?: 'front' | 'left' | 'right';
 };
 
+type PushState = 'unsupported' | 'default' | 'granted' | 'denied' | 'native';
+
 const formatDate = (value?: string | null) => {
   if (!value) return 'Sin registro';
-  return new Date(value).toLocaleString('es-PE', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: 'America/Lima',
-  });
+  return new Date(value).toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Lima' });
 };
 
+const confirmAction = (title: string, prompt: string, confirmText: string, onConfirm: () => void, destructive = false) => {
+  if (Platform.OS === 'web') {
+    if (window.confirm(prompt)) onConfirm();
+    return;
+  }
+  Alert.alert(title, prompt, [
+    { text: 'Cancelar', style: 'cancel' },
+    { text: confirmText, style: destructive ? 'destructive' : 'default', onPress: onConfirm },
+  ]);
+};
+
+/**
+ * Pestaña Configuración. Lo que se ve depende del rol:
+ * - Todos: idioma, notificaciones, registro facial, seguridad, solicitudes y salir.
+ * - ADMIN y SUPER_ADMIN: además, la asistencia general de los colaboradores.
+ * - SUPER_ADMIN: además, los dispositivos autorizados (cambiar el equipo de un
+ *   empleado que perdió o le robaron el suyo, enviar cambio de contraseña) y las
+ *   evidencias faciales. El backend vuelve a exigir el rol en cada endpoint.
+ */
 export default function ConfiguracionScreen() {
-  const { tr } = useLanguage();
+  const { tr, language, setLanguage } = useLanguage();
   const { fullName, email, rol } = useLocalSearchParams<{ fullName: string; email: string; rol: string }>();
+  const session = { fullName, rol, email };
+  const superAdmin = isSuperAdminRole(rol);
+  const admin = isAdminRole(rol);
   const { width } = useWindowDimensions();
   const isMobile = width <= 600;
+
+  // Preferencias
+  const [pushState, setPushState] = useState<PushState>(Platform.OS === 'web' ? 'default' : 'native');
+  const [pushMessage, setPushMessage] = useState('');
+  const [pushBusy, setPushBusy] = useState(false);
+  const [faceEnrolled, setFaceEnrolled] = useState<boolean | null>(null);
+  const [hasPin, setHasPin] = useState<boolean | null>(null);
+
+  // Administración (SUPER_ADMIN)
   const [users, setUsers] = useState<AuthorizedDeviceUser[]>([]);
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(superAdmin);
   const [revokingUserId, setRevokingUserId] = useState<number | null>(null);
   const [resettingUserId, setResettingUserId] = useState<number | null>(null);
   const [message, setMessage] = useState('');
@@ -77,6 +110,48 @@ export default function ConfiguracionScreen() {
   const [selectedEvidence, setSelectedEvidence] = useState<AttendanceEvidence | null>(null);
   const [photoUrl, setPhotoUrl] = useState('');
   const [photoLoading, setPhotoLoading] = useState(false);
+
+  useEffect(() => {
+    if (!email) router.replace('/');
+  }, [email]);
+
+  useEffect(() => {
+    if (!email) return;
+    if (Platform.OS === 'web') {
+      getWebPushPermission().then((p) => setPushState(p as PushState)).catch(() => setPushState('unsupported'));
+    }
+    apiFetch('/api/attendance/face-status')
+      .then(async (r) => { if (r.ok) setFaceEnrolled(Boolean((await r.json().catch(() => ({}))).enrolled)); })
+      .catch(() => undefined);
+    apiFetch('/api/attendance/me/biometric-pin')
+      .then(async (r) => { if (r.ok) setHasPin(Boolean((await r.json().catch(() => ({}))).hasAttendancePin)); })
+      .catch(() => undefined);
+  }, [email]);
+
+  const enablePush = async () => {
+    setPushBusy(true);
+    setPushMessage('');
+    try {
+      await subscribeToWebPush();
+      setPushState('granted');
+      setPushMessage(tr('Notifications enabled on this device.', 'Notificaciones activadas en este dispositivo.'));
+    } catch (err: any) {
+      setPushMessage(err?.message || tr('Notifications could not be enabled.', 'No se pudieron activar las notificaciones.'));
+      getWebPushPermission().then((p) => setPushState(p as PushState)).catch(() => undefined);
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const logout = () => confirmAction(
+    tr('Sign out', 'Cerrar sesión'),
+    tr('Do you want to sign out of this device?', '¿Deseas cerrar sesión en este dispositivo?'),
+    tr('Sign out', 'Cerrar sesión'),
+    async () => { await logoutFromApi(); router.replace('/'); },
+    true,
+  );
+
+  // ---- SUPER_ADMIN ---------------------------------------------------------
 
   const groupedEvidence = useMemo(() => {
     const visible = evidence.filter(item => evidenceView === 'enrollment' ? item.kind === 'enrollment' : item.kind !== 'enrollment');
@@ -139,7 +214,7 @@ export default function ConfiguracionScreen() {
   };
 
   const closePhoto = () => {
-    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    if (photoUrl && Platform.OS === 'web') URL.revokeObjectURL(photoUrl);
     setPhotoUrl('');
     setSelectedEvidence(null);
   };
@@ -158,8 +233,16 @@ export default function ConfiguracionScreen() {
         throw new Error(data.message || 'No se pudo abrir la fotografía.');
       }
       const blob = await response.blob();
-      if (photoUrl) URL.revokeObjectURL(photoUrl);
-      setPhotoUrl(URL.createObjectURL(blob));
+      const uri = Platform.OS === 'web'
+        ? URL.createObjectURL(blob)
+        : await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+      if (photoUrl && Platform.OS === 'web') URL.revokeObjectURL(photoUrl);
+      setPhotoUrl(uri);
     } catch (photoError: any) {
       setSelectedEvidence(null);
       setError(photoError.message || 'No se pudo abrir la fotografía.');
@@ -169,23 +252,18 @@ export default function ConfiguracionScreen() {
   };
 
   useEffect(() => () => {
-    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    if (photoUrl && Platform.OS === 'web') URL.revokeObjectURL(photoUrl);
   }, [photoUrl]);
 
   useEffect(() => {
-    if (rol !== 'SUPER_ADMIN') {
-      router.replace('/');
-      return;
-    }
-    loadDevices();
-  }, [rol]);
+    if (superAdmin) loadDevices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [superAdmin]);
 
   const filteredUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return users;
-    return users.filter(user =>
-      `${user.fullName || ''} ${user.email || ''}`.toLowerCase().includes(query),
-    );
+    return users.filter(user => `${user.fullName || ''} ${user.email || ''}`.toLowerCase().includes(query));
   }, [search, users]);
 
   const revokeDevice = async (user: AuthorizedDeviceUser) => {
@@ -193,9 +271,7 @@ export default function ConfiguracionScreen() {
     setError('');
     setMessage('');
     try {
-      const response = await apiFetch(`/api/admin/authorized-devices/${user.userId}/revoke`, {
-        method: 'POST',
-      });
+      const response = await apiFetch(`/api/admin/authorized-devices/${user.userId}/revoke`, { method: 'POST' });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || 'No se pudo cambiar el equipo autorizado.');
       setMessage(data.message || 'Equipo autorizado revocado.');
@@ -205,18 +281,6 @@ export default function ConfiguracionScreen() {
     } finally {
       setRevokingUserId(null);
     }
-  };
-
-  const confirmRevoke = (user: AuthorizedDeviceUser) => {
-    const prompt = `¿Deseas reemplazar el equipo autorizado de ${user.email}? El equipo anterior perderá el acceso y el próximo inicio registrará la nueva computadora.`;
-    if (Platform.OS === 'web') {
-      if (window.confirm(prompt)) revokeDevice(user);
-      return;
-    }
-    Alert.alert('Cambiar equipo autorizado', prompt, [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Cambiar equipo', style: 'destructive', onPress: () => revokeDevice(user) },
-    ]);
   };
 
   const sendPasswordReset = async (user: AuthorizedDeviceUser) => {
@@ -235,361 +299,380 @@ export default function ConfiguracionScreen() {
     }
   };
 
-  const confirmPasswordReset = (user: AuthorizedDeviceUser) => {
-    const prompt = `Se enviará a ${user.email} un enlace de un solo uso para crear una nueva contraseña. El enlace vencerá en 30 minutos.`;
-    if (Platform.OS === 'web') {
-      if (window.confirm(prompt)) sendPasswordReset(user);
-      return;
-    }
-    Alert.alert('Enviar cambio de contraseña', prompt, [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Enviar enlace', onPress: () => sendPasswordReset(user) },
-    ]);
-  };
+  // ---- Vista ---------------------------------------------------------------
 
-  if (rol !== 'SUPER_ADMIN') return null;
+  const pushStatus = (() => {
+    if (pushState === 'native') return { text: tr('Managed by your phone settings', 'Se gestionan desde los ajustes del celular'), ok: true };
+    if (pushState === 'granted') return { text: tr('Enabled on this device', 'Activadas en este dispositivo'), ok: true };
+    if (pushState === 'denied') return { text: tr('Blocked in the browser. Allow them in the site settings.', 'Bloqueadas en el navegador. Permítelas en los ajustes del sitio.'), ok: false };
+    if (pushState === 'unsupported' || !supportsWebPush()) return { text: tr('This browser does not support notifications', 'Este navegador no admite notificaciones'), ok: false };
+    return { text: tr('Not enabled yet', 'Aún no activadas'), ok: false };
+  })();
+
+  const Row = ({ icon, iconColor, iconBg, title, subtitle, onPress, right }: {
+    icon: keyof typeof Ionicons.glyphMap; iconColor: string; iconBg: string; title: string; subtitle?: string; onPress?: () => void; right?: ReactNode;
+  }) => (
+    <TouchableOpacity style={styles.row} onPress={onPress} disabled={!onPress} activeOpacity={0.75}>
+      <View style={[styles.rowIcon, { backgroundColor: iconBg }]}><Ionicons name={icon} size={20} color={iconColor} /></View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.rowTitle}>{title}</Text>
+        {!!subtitle && <Text style={styles.rowSubtitle}>{subtitle}</Text>}
+      </View>
+      {right ?? (onPress ? <Ionicons name="chevron-forward" size={18} color={colors.faint} /> : null)}
+    </TouchableOpacity>
+  );
 
   return (
-    <View style={styles.page}>
-      <View style={[styles.header, isMobile && styles.headerMobile]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.replace({ pathname: '/dashboard', params: { fullName, email, rol } })}
-        >
-          <Ionicons name="arrow-back" size={21} color="#DCEBFA" />
-        </TouchableOpacity>
-        <View style={styles.headerText}>
-          <Text style={styles.eyebrow}>{tr('SUPER ADMINISTRATION', 'SUPER ADMINISTRACIÓN')}</Text>
-          <Text style={[styles.title, isMobile && styles.titleMobile]}>{tr('Settings', 'Configuración')}</Text>
-          <Text style={styles.subtitle}>{tr('Manage employee authorized devices and facial evidence.', 'Administra los dispositivos autorizados y evidencias faciales de los trabajadores.')}</Text>
-        </View>
+    <TabScreen title={tr('Settings', 'Configuración')} active="configuracion" maxWidth={superAdmin && !isMobile ? WIDE_MAX_WIDTH : undefined} {...session}>
+      {/* Preferencias */}
+      <Text style={styles.sectionLabel}>{tr('PREFERENCES', 'PREFERENCIAS')}</Text>
+      <View style={styles.card}>
+        <Row
+          icon="language-outline" iconColor={colors.primary} iconBg={colors.primarySoft}
+          title={tr('Language', 'Idioma')}
+          right={(
+            <View style={styles.segment}>
+              {(['es', 'en'] as const).map((lang) => (
+                <TouchableOpacity key={lang} style={[styles.segmentItem, language === lang && styles.segmentItemActive]} onPress={() => setLanguage(lang)}>
+                  <Text style={[styles.segmentText, language === lang && styles.segmentTextActive]}>{lang === 'es' ? 'ES' : 'EN'}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        />
+        <View style={styles.divider} />
+        <Row
+          icon="notifications-outline" iconColor={colors.orange} iconBg={colors.orangeSoft}
+          title={tr('Attendance notifications', 'Notificaciones de asistencia')}
+          subtitle={pushStatus.text}
+          right={pushState === 'default' && supportsWebPush() ? (
+            <TouchableOpacity style={styles.smallButton} onPress={enablePush} disabled={pushBusy}>
+              {pushBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.smallButtonText}>{tr('Enable', 'Activar')}</Text>}
+            </TouchableOpacity>
+          ) : (
+            <Ionicons name={pushStatus.ok ? 'checkmark-circle' : 'alert-circle-outline'} size={20} color={pushStatus.ok ? colors.green : colors.faint} />
+          )}
+        />
+        {!!pushMessage && <Text style={styles.inlineMessage}>{pushMessage}</Text>}
       </View>
 
-      <ScrollView contentContainerStyle={[styles.content, isMobile && styles.contentMobile]} horizontal={false}>
-        <View style={[styles.tabs, isMobile && styles.tabsMobile]}>
-          <TouchableOpacity
-            style={[styles.tab, isMobile && styles.tabMobile, activeTab === 'devices' && styles.activeTab]}
-            onPress={() => setActiveTab('devices')}
-          >
-            <Ionicons name="desktop-outline" size={18} color={activeTab === 'devices' ? '#071C35' : '#9AB1C7'} />
-            <Text numberOfLines={1} style={[styles.tabText, isMobile && styles.tabTextMobile, activeTab === 'devices' && styles.activeTabText]}>{isMobile ? tr('Devices', 'Dispositivos') : tr('Authorized devices', 'Dispositivos autorizados')}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, isMobile && styles.tabMobile, activeTab === 'evidence' && styles.activeTab]}
-            onPress={() => {
-              setActiveTab('evidence');
-              if (evidence.length === 0) loadEvidence();
-            }}
-          >
-            <Ionicons name="images-outline" size={18} color={activeTab === 'evidence' ? '#071C35' : '#9AB1C7'} />
-            <Text numberOfLines={1} style={[styles.tabText, isMobile && styles.tabTextMobile, activeTab === 'evidence' && styles.activeTabText]}>{isMobile ? tr('Evidence', 'Evidencias') : tr('Facial evidence', 'Evidencias faciales')}</Text>
-          </TouchableOpacity>
-        </View>
+      {/* Seguridad */}
+      <Text style={styles.sectionLabel}>{tr('SECURITY', 'SEGURIDAD')}</Text>
+      <View style={styles.card}>
+        <Row
+          icon="scan-outline" iconColor={colors.green} iconBg={colors.greenSoft}
+          title={tr('Face recognition', 'Reconocimiento facial')}
+          subtitle={faceEnrolled === null ? '…' : faceEnrolled ? tr('Your face is registered', 'Tu rostro está registrado') : tr('Pending: register it from Home', 'Pendiente: regístralo desde Inicio')}
+          onPress={faceEnrolled === false ? () => goToTab('inicio', session) : undefined}
+          right={faceEnrolled ? <Ionicons name="checkmark-circle" size={20} color={colors.green} /> : undefined}
+        />
+        <View style={styles.divider} />
+        <Row
+          icon="keypad-outline" iconColor={colors.primary} iconBg={colors.primarySoft}
+          title={tr('PIN and password', 'PIN y contraseña')}
+          subtitle={hasPin === false ? tr('You have no attendance PIN yet', 'Aún no tienes PIN de asistencia') : tr('Change your attendance PIN or password', 'Cambia tu PIN de asistencia o tu contraseña')}
+          onPress={() => goToTab('perfil', session)}
+        />
+      </View>
 
-        {activeTab === 'devices' && (
-          <>
-            <View style={[styles.toolbar, isMobile && styles.toolbarMobile]}>
-              <View style={styles.searchBox}>
-                <Ionicons name="search-outline" size={19} color="#7F9BB8" />
-                <TextInput
-                  value={search}
-                  onChangeText={setSearch}
-                  placeholder={tr('Search employee or email', 'Buscar empleado o correo')}
-                  placeholderTextColor="#70859B"
-                  style={styles.searchInput}
-                />
-              </View>
-              <TouchableOpacity style={styles.refreshButton} onPress={loadDevices} disabled={loading}>
-                <Ionicons name="refresh-outline" size={19} color="#071C35" />
-                <Text style={styles.refreshText}>{tr('Refresh', 'Actualizar')}</Text>
+      {/* Solicitudes */}
+      <Text style={styles.sectionLabel}>{tr('REQUESTS', 'SOLICITUDES')}</Text>
+      <View style={styles.card}>
+        <Row
+          icon="document-text-outline" iconColor={colors.amber} iconBg={colors.amberSoft}
+          title={tr('My requests', 'Mis solicitudes')}
+          subtitle={tr('Permissions and vacations', 'Permisos y vacaciones')}
+          onPress={() => openScreen('/permisos', session)}
+        />
+      </View>
+
+      {/* Administración */}
+      {admin && (
+        <>
+          <Text style={styles.sectionLabel}>{tr('ADMINISTRATION', 'ADMINISTRACIÓN')}</Text>
+          <View style={styles.card}>
+            <Row
+              icon="people-outline" iconColor={colors.primary} iconBg={colors.primarySoft}
+              title={tr('General attendance', 'Asistencia general')}
+              subtitle={tr('Check the attendance of any employee', 'Consulta la asistencia de cualquier colaborador')}
+              onPress={() => openScreen('/asistencia-general', session)}
+            />
+          </View>
+        </>
+      )}
+
+      {superAdmin && (
+        <View style={styles.card}>
+          <View style={styles.adminHeader}>
+            <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
+            <Text style={styles.adminTitle}>{tr('Super administration', 'Super administración')}</Text>
+          </View>
+          <Text style={styles.adminSubtitle}>
+            {tr(
+              'If an employee loses their device or it is stolen, change their authorized device: the old one loses access and the next sign-in registers the new one.',
+              'Si a un colaborador se le pierde o le roban el equipo, cambia su equipo autorizado: el anterior pierde el acceso y el próximo inicio de sesión registra el nuevo.',
+            )}
+          </Text>
+
+          <View style={styles.tabs}>
+            {(['devices', 'evidence'] as const).map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.tab, activeTab === tab && styles.tabActive]}
+                onPress={() => {
+                  setActiveTab(tab);
+                  if (tab === 'evidence' && evidence.length === 0) loadEvidence();
+                }}
+              >
+                <Ionicons name={tab === 'devices' ? 'phone-portrait-outline' : 'images-outline'} size={17} color={activeTab === tab ? '#FFF' : colors.muted} />
+                <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]} numberOfLines={1}>
+                  {tab === 'devices' ? tr('Devices', 'Dispositivos') : tr('Facial evidence', 'Evidencias')}
+                </Text>
               </TouchableOpacity>
+            ))}
+          </View>
+
+          {activeTab === 'evidence' && (
+            <View style={styles.tabs}>
+              {(['attendance', 'enrollment'] as const).map((view) => (
+                <TouchableOpacity key={view} style={[styles.tab, evidenceView === view && styles.tabSoftActive]} onPress={() => setEvidenceView(view)}>
+                  <Text style={[styles.tabText, evidenceView === view && { color: colors.primary }]}>{view === 'attendance' ? 'Marcaciones' : 'Registro biométrico'}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
+          )}
 
-            {message ? <Text style={styles.successMessage}>{message}</Text> : null}
-            {error ? <Text style={styles.errorMessage}>{error}</Text> : null}
+          <View style={[styles.toolbar, isMobile && { flexDirection: 'column' }]}>
+            <View style={styles.searchBox}>
+              <Ionicons name="search-outline" size={18} color={colors.faint} />
+              <TextInput
+                value={search}
+                onChangeText={setSearch}
+                onSubmitEditing={activeTab === 'evidence' ? loadEvidence : undefined}
+                placeholder={tr('Search employee or email', 'Buscar empleado o correo')}
+                placeholderTextColor={colors.faint}
+                style={styles.searchInput}
+              />
+            </View>
+            <TouchableOpacity style={styles.refreshButton} onPress={activeTab === 'devices' ? loadDevices : loadEvidence} disabled={loading || evidenceLoading}>
+              <Ionicons name={activeTab === 'devices' ? 'refresh-outline' : 'search-outline'} size={18} color="#FFF" />
+              <Text style={styles.refreshText}>{activeTab === 'devices' ? tr('Refresh', 'Actualizar') : tr('Search', 'Buscar')}</Text>
+            </TouchableOpacity>
+          </View>
 
-            {loading ? (
-              <View style={styles.loadingBox}>
-                <ActivityIndicator color="#65B9FF" size="large" />
-                <Text style={styles.loadingText}>{tr('Loading devices…', 'Cargando dispositivos…')}</Text>
-              </View>
+          {!!message && <Text style={styles.success}>{message}</Text>}
+          {!!error && <Text style={styles.error}>{error}</Text>}
+
+          {activeTab === 'devices' && (
+            loading ? (
+              <ActivityIndicator color={colors.primary} style={{ paddingVertical: 40 }} />
             ) : filteredUsers.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Ionicons name="laptop-outline" size={42} color="#58748F" />
-                <Text style={styles.emptyTitle}>{tr('No users found', 'No se encontraron usuarios')}</Text>
-              </View>
+              <Text style={styles.emptyText}>{tr('No users found', 'No se encontraron usuarios')}</Text>
             ) : (
               <View style={styles.grid}>
                 {filteredUsers.map(user => {
                   const hasDevice = Boolean(user.deviceId && user.isActive);
                   const isOwnAccount = Number(user.userId) > 0 && user.email?.toLowerCase() === email?.toLowerCase();
                   return (
-                    <View style={[styles.card, isMobile && styles.cardMobile]} key={user.userId}>
-                      <View style={[styles.cardTop, isMobile && styles.cardTopMobile]}>
-                        <View style={styles.userIcon}>
-                          <Ionicons name="person-outline" size={22} color="#77C3FF" />
-                        </View>
-                        <View style={styles.userInfo}>
+                    <View style={[styles.userCard, isMobile && styles.userCardMobile]} key={user.userId}>
+                      <View style={styles.userTop}>
+                        <View style={styles.userIcon}><Ionicons name="person-outline" size={20} color={colors.primary} /></View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={styles.userName}>{user.fullName || 'Usuario sin nombre'}</Text>
-                          <Text style={styles.userEmail}>{user.email}</Text>
+                          <Text style={styles.userEmail} numberOfLines={1}>{user.email}</Text>
                         </View>
-                        <View style={[styles.statusBadge, hasDevice ? styles.activeBadge : styles.pendingBadge]}>
-                          <Text style={[styles.statusText, hasDevice ? styles.activeText : styles.pendingText]}>
-                            {hasDevice ? 'AUTORIZADO' : 'PENDIENTE'}
-                          </Text>
+                        <View style={[styles.badge, { backgroundColor: hasDevice ? colors.greenSoft : colors.amberSoft }]}>
+                          <Text style={[styles.badgeText, { color: hasDevice ? colors.green : colors.amber }]}>{hasDevice ? 'AUTORIZADO' : 'PENDIENTE'}</Text>
                         </View>
                       </View>
 
                       <View style={styles.devicePanel}>
-                        <View style={styles.deviceIcon}>
-                          <Ionicons name={hasDevice ? 'desktop-outline' : 'alert-circle-outline'} size={24} color={hasDevice ? '#6EDDA5' : '#F0B45A'} />
-                        </View>
-                        <View style={styles.deviceInfo}>
-                          <Text style={styles.deviceName}>{hasDevice ? user.deviceLabel || user.deviceName || 'Computadora autorizada' : 'Sin computadora autorizada'}</Text>
-                          <Text style={styles.detailText}>Autorizado: {formatDate(user.authorizedAt)}</Text>
-                          <Text style={styles.detailText}>Último acceso: {formatDate(user.lastUsedAt)}</Text>
+                        <Ionicons name={hasDevice ? 'phone-portrait-outline' : 'alert-circle-outline'} size={22} color={hasDevice ? colors.green : colors.amber} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.deviceName}>{hasDevice ? user.deviceLabel || user.deviceName || 'Equipo autorizado' : 'Sin equipo autorizado'}</Text>
+                          <Text style={styles.detail}>Autorizado: {formatDate(user.authorizedAt)}</Text>
+                          <Text style={styles.detail}>Último acceso: {formatDate(user.lastUsedAt)}</Text>
                         </View>
                       </View>
 
                       <TouchableOpacity
-                        style={[
-                          styles.revokeButton,
-                          (!hasDevice || isOwnAccount || revokingUserId === user.userId) && styles.disabledButton,
-                        ]}
+                        style={[styles.revokeButton, (!hasDevice || isOwnAccount || revokingUserId === user.userId) && styles.disabled]}
                         disabled={!hasDevice || isOwnAccount || revokingUserId === user.userId}
-                        onPress={() => confirmRevoke(user)}
-                      >
-                        {revokingUserId === user.userId ? (
-                          <ActivityIndicator size="small" color="#FFD6D6" />
-                        ) : (
-                          <Ionicons name="swap-horizontal-outline" size={19} color="#FFD6D6" />
+                        onPress={() => confirmAction(
+                          'Cambiar equipo autorizado',
+                          `¿Deseas reemplazar el equipo autorizado de ${user.email}? El equipo anterior perderá el acceso y el próximo inicio registrará el nuevo equipo.`,
+                          'Cambiar equipo',
+                          () => revokeDevice(user),
+                          true,
                         )}
-                        <Text style={styles.revokeText}>
-                          {isOwnAccount ? 'Equipo administrativo actual' : 'Cambiar equipo autorizado'}
-                        </Text>
+                      >
+                        {revokingUserId === user.userId ? <ActivityIndicator size="small" color={colors.red} /> : <Ionicons name="swap-horizontal-outline" size={18} color={colors.red} />}
+                        <Text style={styles.revokeText}>{isOwnAccount ? 'Equipo administrativo actual' : 'Cambiar equipo autorizado'}</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={[styles.passwordResetButton, resettingUserId === user.userId && styles.disabledButton]}
+                        style={[styles.resetButton, resettingUserId === user.userId && styles.disabled]}
                         disabled={resettingUserId === user.userId}
-                        onPress={() => confirmPasswordReset(user)}
-                      >
-                        {resettingUserId === user.userId ? (
-                          <ActivityIndicator size="small" color="#BFE4FF" />
-                        ) : (
-                          <Ionicons name="mail-outline" size={19} color="#BFE4FF" />
+                        onPress={() => confirmAction(
+                          'Enviar cambio de contraseña',
+                          `Se enviará a ${user.email} un enlace de un solo uso para crear una nueva contraseña. El enlace vencerá en 30 minutos.`,
+                          'Enviar enlace',
+                          () => sendPasswordReset(user),
                         )}
-                        <Text style={styles.passwordResetText}>Enviar cambio de contraseña</Text>
+                      >
+                        {resettingUserId === user.userId ? <ActivityIndicator size="small" color={colors.primary} /> : <Ionicons name="mail-outline" size={18} color={colors.primary} />}
+                        <Text style={styles.resetText}>Enviar cambio de contraseña</Text>
                       </TouchableOpacity>
                     </View>
                   );
                 })}
               </View>
-            )}
-          </>
-        )}
+            )
+          )}
 
-        {activeTab === 'evidence' && (
-          <>
-            <View style={styles.evidenceFilters}>
-              {(['attendance', 'enrollment'] as const).map(view => (
-                <TouchableOpacity
-                  key={view}
-                  style={[styles.evidenceFilter, evidenceView === view && styles.evidenceFilterActive]}
-                  onPress={() => setEvidenceView(view)}
-                >
-                  <Ionicons name={view === 'attendance' ? 'time-outline' : 'scan-outline'} size={18} color={evidenceView === view ? '#071C35' : '#9AB1C7'} />
-                  <Text style={[styles.evidenceFilterText, evidenceView === view && styles.evidenceFilterTextActive]}>
-                    {view === 'attendance' ? 'Marcaciones' : 'Registro biométrico'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <View style={[styles.toolbar, isMobile && styles.toolbarMobile]}>
-              <View style={styles.searchBox}>
-                <Ionicons name="search-outline" size={19} color="#7F9BB8" />
-                <TextInput
-                  value={search}
-                  onChangeText={setSearch}
-                  onSubmitEditing={loadEvidence}
-                  placeholder={tr('Search employee or email', 'Buscar empleado o correo')}
-                  placeholderTextColor="#70859B"
-                  style={styles.searchInput}
-                />
-              </View>
-              <TouchableOpacity style={styles.refreshButton} onPress={loadEvidence} disabled={evidenceLoading}>
-                <Ionicons name="search-outline" size={19} color="#071C35" />
-                <Text style={styles.refreshText}>{tr('Search', 'Buscar')}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {error ? <Text style={styles.errorMessage}>{error}</Text> : null}
-
-            {evidenceLoading ? (
-              <View style={styles.loadingBox}>
-                <ActivityIndicator color="#65B9FF" size="large" />
-                <Text style={styles.loadingText}>{tr('Loading evidence…', 'Cargando evidencias…')}</Text>
-              </View>
+          {activeTab === 'evidence' && (
+            evidenceLoading ? (
+              <ActivityIndicator color={colors.primary} style={{ paddingVertical: 40 }} />
             ) : groupedEvidence.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Ionicons name="images-outline" size={42} color="#58748F" />
-                <Text style={styles.emptyTitle}>{evidenceView === 'attendance' ? 'No hay fotografías de marcaciones' : 'No hay registros biométricos'}</Text>
-              </View>
+              <Text style={styles.emptyText}>{evidenceView === 'attendance' ? 'No hay fotografías de marcaciones' : 'No hay registros biométricos'}</Text>
             ) : (
-              <View style={styles.evidenceList}>
+              <View style={{ gap: 10 }}>
                 {groupedEvidence.map(group => (
                   <View style={styles.evidenceGroup} key={String(group.employeeId || group.email)}>
-                    <View style={styles.evidenceGroupHeader}>
-                      <View style={styles.evidenceIcon}><Ionicons name="person-outline" size={24} color="#76C4FF" /></View>
-                      <View style={styles.evidenceInfo}>
+                    <View style={styles.userTop}>
+                      <View style={styles.userIcon}><Ionicons name="person-outline" size={20} color={colors.primary} /></View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={styles.userName}>{group.employeeName}</Text>
                         <Text style={styles.userEmail}>{group.email || `Empleado #${group.employeeId}`}</Text>
                       </View>
                       <Text style={styles.evidenceCount}>{group.items.length} {group.items.length === 1 ? 'registro' : 'registros'}</Text>
                     </View>
-                    <View style={styles.evidenceGroupItems}>{group.items.map(item => (
-                      <View style={[styles.evidenceCard, isMobile && styles.evidenceCardMobile]} key={`${item.kind || 'attendance'}-${item.evidenceId}`}>
-                        <View style={styles.evidenceIcon}><Ionicons name={item.kind === 'enrollment' ? 'scan-outline' : 'camera-outline'} size={25} color="#76C4FF" /></View>
-                        <View style={styles.evidenceInfo}>
-                          <View style={styles.evidenceMeta}>
-                            <Text style={styles.evidenceType}>{item.kind === 'enrollment'
+                    {group.items.map(item => (
+                      <View style={[styles.evidenceItem, isMobile && { flexDirection: 'column', alignItems: 'stretch' }]} key={`${item.kind || 'attendance'}-${item.evidenceId}`}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={styles.evidenceType}>
+                            {item.kind === 'enrollment'
                               ? `Registro: ${item.captureAngle === 'front' ? 'Frente' : item.captureAngle === 'left' ? 'Lado izquierdo' : 'Lado derecho'}`
-                              : item.checkType === 0 ? 'Entrada' : 'Salida'}</Text>
-                            <Text style={styles.detailText}>•</Text>
-                            <Text style={styles.detailText}>{formatDate(item.markedAt || item.capturedAt)}</Text>
-                            {item.kind !== 'enrollment' && <Text style={styles.detailText}>• IP: {item.captureIp || 'No disponible'}</Text>}
-                          </View>
-                          <Text style={styles.locationText}>{item.kind === 'enrollment' ? 'Plantilla de registro facial' : item.locationSource || 'Ubicación no disponible'}</Text>
+                              : item.checkType === 0 ? 'Entrada' : 'Salida'}
+                            {'  ·  '}{formatDate(item.markedAt || item.capturedAt)}
+                          </Text>
+                          {item.kind !== 'enrollment' && <Text style={styles.detail}>IP: {item.captureIp || 'No disponible'}</Text>}
+                          <Text style={styles.location} numberOfLines={2}>{item.kind === 'enrollment' ? 'Plantilla de registro facial' : item.locationSource || 'Ubicación no disponible'}</Text>
                         </View>
-                        <TouchableOpacity style={[styles.photoButton, isMobile && styles.photoButtonMobile]} onPress={() => openPhoto(item)}>
-                          <Ionicons name="eye-outline" size={19} color="#071C35" />
+                        <TouchableOpacity style={styles.photoButton} onPress={() => openPhoto(item)}>
+                          <Ionicons name="eye-outline" size={17} color={colors.primary} />
                           <Text style={styles.photoButtonText}>{tr('View photo', 'Ver fotografía')}</Text>
                         </TouchableOpacity>
                       </View>
-                    ))}</View>
+                    ))}
                   </View>
                 ))}
               </View>
-            )}
-          </>
-        )}
-      </ScrollView>
+            )
+          )}
+        </View>
+      )}
+
+      <TouchableOpacity style={styles.logout} onPress={logout} activeOpacity={0.8}>
+        <Ionicons name="log-out-outline" size={20} color={colors.red} />
+        <Text style={styles.logoutText}>{tr('Sign out', 'Cerrar sesión')}</Text>
+      </TouchableOpacity>
 
       <Modal visible={Boolean(selectedEvidence)} transparent animationType="fade" onRequestClose={closePhoto}>
         <Pressable style={styles.photoBackdrop} onPress={closePhoto}>
-          <Pressable style={[styles.photoModal, isMobile && styles.photoModalMobile]} onPress={() => { }}>
+          <Pressable style={styles.photoModal} onPress={() => { }}>
             <View style={styles.photoHeader}>
-              <View>
-                <Text style={styles.eyebrow}>{selectedEvidence?.kind === 'enrollment' ? 'ROSTRO REGISTRADO' : 'EVIDENCIA FACIAL'}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.photoEyebrow}>{selectedEvidence?.kind === 'enrollment' ? 'ROSTRO REGISTRADO' : 'EVIDENCIA FACIAL'}</Text>
                 <Text style={styles.photoTitle}>{selectedEvidence?.employeeName}</Text>
                 <Text style={styles.userEmail}>{formatDate(selectedEvidence?.markedAt || selectedEvidence?.capturedAt)}</Text>
               </View>
-              <TouchableOpacity style={styles.closePhotoButton} onPress={closePhoto}>
-                <Ionicons name="close" size={23} color="#DCEBFA" />
+              <TouchableOpacity style={styles.closePhoto} onPress={closePhoto}>
+                <Ionicons name="close" size={22} color={colors.text} />
               </TouchableOpacity>
             </View>
-            <View style={[styles.photoFrame, isMobile && styles.photoFrameMobile]}>
+            <View style={styles.photoFrame}>
               {photoLoading ? (
-                <ActivityIndicator color="#65B9FF" size="large" />
+                <ActivityIndicator color={colors.primary} size="large" />
               ) : photoUrl ? (
-                <Image source={{ uri: photoUrl }} style={styles.photoImage} resizeMode="contain" />
+                <Image source={{ uri: photoUrl }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
               ) : (
-                <Text style={styles.errorMessage}>No se pudo cargar la fotografía.</Text>
+                <Text style={styles.error}>No se pudo cargar la fotografía.</Text>
               )}
             </View>
             <Text style={styles.photoPrivacy}>Acceso restringido a SUPER_ADMIN · No compartir sin autorización.</Text>
           </Pressable>
         </Pressable>
       </Modal>
-    </View>
+    </TabScreen>
   );
 }
 
-const styles: Record<string, any> = {
-  page: { flex: 1, minHeight: '100vh', backgroundColor: '#071321' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 15, paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: '#18314A', backgroundColor: '#0B1929' },
-  headerMobile: { alignItems: 'flex-start', gap: 10, paddingHorizontal: 14, paddingTop: 18, paddingBottom: 16 },
-  backButton: { width: 42, height: 42, borderRadius: 12, backgroundColor: '#152A40', alignItems: 'center', justifyContent: 'center' },
-  headerText: { flex: 1 },
-  eyebrow: { color: '#65B9FF', fontSize: 10, fontWeight: '800', letterSpacing: 1.3 },
-  title: { color: '#FFFFFF', fontSize: 25, fontWeight: '800', marginTop: 2 },
-  titleMobile: { fontSize: 22 },
-  subtitle: { color: '#94AAC0', fontSize: 13, marginTop: 4 },
-  content: { width: '100%', maxWidth: 1200, alignSelf: 'center', padding: 24, paddingBottom: 50 },
-  contentMobile: { padding: 12, paddingBottom: 36 },
-  tabs: { flexDirection: 'row', alignSelf: 'flex-start', gap: 8, padding: 5, borderRadius: 13, backgroundColor: '#0D1D2E', borderWidth: 1, borderColor: '#213D56', marginBottom: 18 },
-  tabsMobile: { alignSelf: 'stretch', width: '100%', gap: 4 },
-  tab: { minHeight: 40, paddingHorizontal: 15, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  tabMobile: { flex: 1, minWidth: 0, paddingHorizontal: 7, gap: 5 },
-  activeTab: { backgroundColor: '#77C3FF' },
-  tabText: { color: '#9AB1C7', fontSize: 12.5, fontWeight: '700' },
-  tabTextMobile: { fontSize: 11.5, flexShrink: 1 },
-  activeTabText: { color: '#071C35', fontWeight: '900' },
-  toolbar: { flexDirection: 'row', gap: 12, marginBottom: 18 },
-  toolbarMobile: { flexDirection: 'column', gap: 9 },
-  searchBox: { flex: 1, minHeight: 48, borderRadius: 12, borderWidth: 1, borderColor: '#29445E', backgroundColor: '#0F2032', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 9 },
-  searchInput: { flex: 1, color: '#FFFFFF', fontSize: 14, outlineStyle: 'none' },
-  refreshButton: { minHeight: 48, paddingHorizontal: 17, borderRadius: 12, backgroundColor: '#77C3FF', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  refreshText: { color: '#071C35', fontWeight: '800', fontSize: 13 },
-  successMessage: { color: '#7BE5AF', backgroundColor: '#0E362A', borderRadius: 10, padding: 12, marginBottom: 14 },
-  errorMessage: { color: '#FFAAAA', backgroundColor: '#3A171B', borderRadius: 10, padding: 12, marginBottom: 14 },
-  loadingBox: { paddingVertical: 80, alignItems: 'center', gap: 13 },
-  loadingText: { color: '#9BB1C7', fontSize: 14 },
-  emptyBox: { paddingVertical: 70, alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#203950', borderRadius: 16, backgroundColor: '#0B1A2A' },
-  emptyTitle: { color: '#B7CADC', fontSize: 16, fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
-  card: { flexGrow: 1, flexBasis: 470, maxWidth: 575, padding: 17, borderRadius: 16, borderWidth: 1, borderColor: '#213D56', backgroundColor: '#0D1D2E' },
-  cardMobile: { flexBasis: 'auto', flexGrow: 0, width: '100%', maxWidth: '100%', padding: 14 },
-  cardTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  cardTopMobile: { flexWrap: 'wrap', alignItems: 'flex-start' },
-  userIcon: { width: 43, height: 43, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#17304A' },
-  userInfo: { flex: 1, minWidth: 0 },
-  userName: { color: '#F7FAFD', fontSize: 15, fontWeight: '800' },
-  userEmail: { color: '#8FA7BD', fontSize: 12, marginTop: 3 },
-  statusBadge: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8 },
-  activeBadge: { backgroundColor: '#103B2C' },
-  pendingBadge: { backgroundColor: '#3A2C15' },
-  statusText: { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
-  activeText: { color: '#6FE1A6' },
-  pendingText: { color: '#F2BD69' },
-  devicePanel: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#091725', borderRadius: 12, padding: 13, marginTop: 15 },
-  deviceIcon: { width: 39, alignItems: 'center' },
-  deviceInfo: { flex: 1 },
-  deviceName: { color: '#D9E7F4', fontSize: 13, fontWeight: '700', marginBottom: 5 },
-  detailText: { color: '#718BA3', fontSize: 11, marginTop: 2 },
-  revokeButton: { marginTop: 14, minHeight: 44, borderRadius: 11, backgroundColor: '#57232A', borderWidth: 1, borderColor: '#80404A', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  disabledButton: { opacity: 0.42 },
-  revokeText: { color: '#FFD6D6', fontSize: 12.5, fontWeight: '800' },
-  passwordResetButton: { marginTop: 9, minHeight: 44, borderRadius: 11, backgroundColor: '#123656', borderWidth: 1, borderColor: '#2C628D', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  passwordResetText: { color: '#BFE4FF', fontSize: 12.5, fontWeight: '800' },
-  evidenceFilters: { width: '100%', flexDirection: 'row', gap: 8, padding: 5, marginBottom: 14, borderRadius: 13, borderWidth: 1, borderColor: '#213D56', backgroundColor: '#091725' },
-  evidenceFilter: { flex: 1, minHeight: 44, paddingHorizontal: 8, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  evidenceFilterActive: { backgroundColor: '#77C3FF' },
-  evidenceFilterText: { color: '#9AB1C7', fontSize: 12, fontWeight: '800', textAlign: 'center' },
-  evidenceFilterTextActive: { color: '#071C35' },
-  evidenceList: { gap: 11 },
-  evidenceGroup: { width: '100%', padding: 12, borderRadius: 16, borderWidth: 1, borderColor: '#294760', backgroundColor: '#091725' },
-  evidenceGroupHeader: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 11, marginBottom: 11, borderBottomWidth: 1, borderBottomColor: '#1A344A' },
-  evidenceGroupItems: { gap: 9 },
-  evidenceCount: { color: '#76C4FF', fontSize: 10.5, fontWeight: '800' },
-  evidenceCard: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 13, padding: 15, borderRadius: 14, borderWidth: 1, borderColor: '#213D56', backgroundColor: '#0D1D2E' },
-  evidenceCardMobile: { flexDirection: 'column', alignItems: 'stretch', padding: 13 },
-  evidenceIcon: { width: 46, height: 46, borderRadius: 13, backgroundColor: '#17304A', alignItems: 'center', justifyContent: 'center' },
-  evidenceInfo: { flex: 1, minWidth: 0 },
-  evidenceMeta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 5 },
-  evidenceType: { color: '#DCEBFA', fontSize: 12, fontWeight: '800' },
-  locationText: { color: '#5FAEEA', fontSize: 11, marginTop: 5 },
-  photoButton: { minHeight: 41, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#77C3FF', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  photoButtonMobile: { width: '100%', marginTop: 4 },
-  photoButtonText: { color: '#071C35', fontSize: 12, fontWeight: '900' },
-  photoBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.84)', alignItems: 'center', justifyContent: 'center', padding: 18 },
-  photoModal: { width: '100%', maxWidth: 720, maxHeight: '92vh', borderRadius: 18, borderWidth: 1, borderColor: '#2A4965', backgroundColor: '#0D1D2E', padding: 18 },
-  photoModalMobile: { padding: 12, maxHeight: '88vh', borderRadius: 14 },
-  photoHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  photoTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '800', marginTop: 3 },
-  closePhotoButton: { width: 39, height: 39, borderRadius: 20, backgroundColor: '#18314A', alignItems: 'center', justifyContent: 'center' },
-  photoFrame: { width: '100%', minHeight: 320, maxHeight: '68vh', aspectRatio: 4 / 3, backgroundColor: '#040B12', borderRadius: 13, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
-  photoFrameMobile: { minHeight: 210, maxHeight: '58vh' },
-  photoImage: { width: '100%', height: '100%' },
-  photoPrivacy: { color: '#7089A1', fontSize: 10.5, textAlign: 'center', marginTop: 11 },
-};
+const styles = StyleSheet.create({
+  sectionLabel: { color: colors.faint, fontSize: 12, fontWeight: '800', letterSpacing: 1.1, marginBottom: -6, marginLeft: 4 },
+  card: { backgroundColor: colors.card, borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 6, ...cardShadow },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10 },
+  rowIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  rowTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  rowSubtitle: { color: colors.muted, fontSize: 12.5, marginTop: 2 },
+  divider: { height: 1, backgroundColor: colors.border, marginLeft: 62 },
+  inlineMessage: { color: colors.primaryText, fontSize: 12.5, paddingHorizontal: 12, paddingBottom: 10 },
+  segment: { flexDirection: 'row', backgroundColor: colors.primarySoft, borderRadius: 10, padding: 3 },
+  segmentItem: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  segmentItemActive: { backgroundColor: colors.primary },
+  segmentText: { color: colors.primaryText, fontSize: 12.5, fontWeight: '800' },
+  segmentTextActive: { color: '#FFFFFF' },
+  smallButton: { backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, minWidth: 70, alignItems: 'center' },
+  smallButtonText: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '800' },
+  adminHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, paddingTop: 8 },
+  adminTitle: { color: colors.text, fontSize: 17, fontWeight: '800' },
+  adminSubtitle: { color: colors.muted, fontSize: 12.5, lineHeight: 18, paddingHorizontal: 8, marginTop: 4, marginBottom: 10 },
+  tabs: { flexDirection: 'row', gap: 6, backgroundColor: colors.cardSoft, borderRadius: 12, padding: 4, marginHorizontal: 6, marginBottom: 10, borderWidth: 1, borderColor: colors.border },
+  tab: { flex: 1, minHeight: 38, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 6 },
+  tabActive: { backgroundColor: colors.primary },
+  tabSoftActive: { backgroundColor: colors.primarySoft },
+  tabText: { color: colors.muted, fontSize: 12.5, fontWeight: '700' },
+  tabTextActive: { color: '#FFFFFF' },
+  toolbar: { flexDirection: 'row', gap: 8, marginHorizontal: 6, marginBottom: 10 },
+  searchBox: { flex: 1, minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.cardSoft, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 },
+  searchInput: { flex: 1, color: colors.text, fontSize: 14, outlineStyle: 'none' } as any,
+  refreshButton: { minHeight: 44, paddingHorizontal: 14, borderRadius: 12, backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  refreshText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
+  success: { color: colors.green, backgroundColor: colors.greenSoft, borderRadius: 10, padding: 11, marginHorizontal: 6, marginBottom: 10, fontSize: 13 },
+  error: { color: colors.red, backgroundColor: colors.redSoft, borderRadius: 10, padding: 11, marginHorizontal: 6, marginBottom: 10, fontSize: 13 },
+  emptyText: { color: colors.muted, textAlign: 'center', paddingVertical: 30 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 6, paddingBottom: 6 },
+  userCard: { flexGrow: 1, flexBasis: 420, maxWidth: 540, padding: 13, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.cardSoft },
+  userCardMobile: { flexBasis: 'auto', maxWidth: '100%', width: '100%' },
+  userTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  userIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primarySoft },
+  userName: { color: colors.text, fontSize: 14.5, fontWeight: '800' },
+  userEmail: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  badgeText: { fontSize: 9.5, fontWeight: '900', letterSpacing: 0.4 },
+  devicePanel: { flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: colors.card, borderRadius: 12, padding: 11, marginTop: 11, borderWidth: 1, borderColor: colors.border },
+  deviceName: { color: colors.text, fontSize: 13, fontWeight: '700', marginBottom: 3 },
+  detail: { color: colors.muted, fontSize: 11.5, marginTop: 1 },
+  revokeButton: { marginTop: 10, minHeight: 42, borderRadius: 11, backgroundColor: colors.redSoft, borderWidth: 1, borderColor: '#F7C9CB', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  revokeText: { color: colors.red, fontSize: 12.5, fontWeight: '800' },
+  resetButton: { marginTop: 8, minHeight: 42, borderRadius: 11, backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: '#CFDDF6', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  resetText: { color: colors.primary, fontSize: 12.5, fontWeight: '800' },
+  disabled: { opacity: 0.45 },
+  evidenceGroup: { marginHorizontal: 6, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.cardSoft, gap: 8 },
+  evidenceCount: { color: colors.primary, fontSize: 11, fontWeight: '800' },
+  evidenceItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
+  evidenceType: { color: colors.text, fontSize: 12.5, fontWeight: '700' },
+  location: { color: colors.primary, fontSize: 11.5, marginTop: 3 },
+  photoButton: { minHeight: 38, paddingHorizontal: 12, borderRadius: 10, backgroundColor: colors.primarySoft, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  photoButtonText: { color: colors.primary, fontSize: 12, fontWeight: '800' },
+  logout: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 50, borderRadius: 16, backgroundColor: colors.redSoft, borderWidth: 1, borderColor: '#F7C9CB', marginTop: 4 },
+  logoutText: { color: colors.red, fontSize: 15, fontWeight: '800' },
+  photoBackdrop: { flex: 1, backgroundColor: 'rgba(10, 20, 45, 0.7)', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  photoModal: { width: '100%', maxWidth: 680, borderRadius: 18, backgroundColor: colors.card, padding: 16 },
+  photoHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  photoEyebrow: { color: colors.primary, fontSize: 10.5, fontWeight: '800', letterSpacing: 1.2 },
+  photoTitle: { color: colors.text, fontSize: 19, fontWeight: '800', marginTop: 2 },
+  closePhoto: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  photoFrame: { width: '100%', aspectRatio: 4 / 3, backgroundColor: '#0B1220', borderRadius: 12, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  photoPrivacy: { color: colors.faint, fontSize: 10.5, textAlign: 'center', marginTop: 10 },
+});
