@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import TabScreen from '../components/TabScreen';
 import { apiFetch, clearAuthSession } from '../services/api';
 import { createDeviceAuthenticationCredential } from '../services/device-auth';
@@ -29,7 +29,10 @@ type Empleado = {
 
 export default function PerfilScreen() {
   const { language, setLanguage, tr } = useLanguage();
-  const { fullName, rol, email } = useLocalSearchParams<{ fullName: string; rol: string; email: string }>();
+  const { fullName, rol, email, seccion } = useLocalSearchParams<{ fullName: string; rol: string; email: string; seccion?: string }>();
+  // seccion=pin llega desde «Restablecer PIN» del dashboard: se baja a esa tarjeta.
+  const scrollRef = useRef<ScrollView>(null);
+  const [pinCardY, setPinCardY] = useState<number | null>(null);
   const [empleado, setEmpleado] = useState<Empleado | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -301,12 +304,21 @@ export default function PerfilScreen() {
     ]
     : [];
 
+  useEffect(() => {
+    if (seccion !== 'pin' || pinCardY === null) return;
+    const timer = setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(pinCardY - 12, 0), animated: true }), 150);
+    return () => clearTimeout(timer);
+  }, [seccion, pinCardY]);
+
   const renderPinSection = (desktop = false) => {
     // Sin PIN asignado no hay nada que cambiar: el alta la hace administración.
     if (!hasAttendancePin) return null;
 
     return (
-      <View style={[styles.securityCard, desktop && styles.desktopSecurityCard]}>
+      <View
+        style={[styles.securityCard, desktop && styles.desktopSecurityCard, seccion === 'pin' && styles.securityCardFocus]}
+        onLayout={(e) => setPinCardY(e.nativeEvent.layout.y)}
+      >
         <View style={styles.securityHeader}>
           <View style={styles.securityIcon}>
             <Ionicons name="keypad-outline" size={24} color={colors.primary} />
@@ -550,7 +562,7 @@ export default function PerfilScreen() {
 
   return (
     <>
-      <TabScreen title={tr('My profile', 'Mi perfil')} active="perfil" maxWidth={isDesktop ? 760 : undefined} fullName={fullName} rol={rol} email={email}>
+      <TabScreen title={tr('My profile', 'Mi perfil')} active="perfil" maxWidth={isDesktop ? 760 : undefined} scrollRef={scrollRef} fullName={fullName} rol={rol} email={email}>
         {/* Tarjeta del colaborador: foto (se cambia al tocarla), nombre, cargo y estado */}
         <View style={styles.profileCard}>
           <View style={styles.coverBanner} />
@@ -677,6 +689,7 @@ const styles = StyleSheet.create({
   securityCard: { width: '100%', backgroundColor: colors.card, borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 16, ...cardShadow },
   languageCard: { width: '100%', backgroundColor: colors.card, borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 16, ...cardShadow },
   desktopSecurityCard: {},
+  securityCardFocus: { borderColor: colors.primary, borderWidth: 2 },
   languageOptions: { flexDirection: 'row', gap: 10 },
   languageOption: {
     flex: 1, minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',

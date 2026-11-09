@@ -43,11 +43,11 @@ export const styles = StyleSheet.create({
   actionDisabled: { opacity: 0.4 },
   actionText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700', lineHeight: 21 },
 
-  // Alta facial pendiente
-  enrollCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.amberSoft, borderColor: '#F5DFA6', borderWidth: 1, borderRadius: 16, padding: 14 },
-  enrollIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  enrollTitle: { color: colors.text, fontSize: 14.5, fontWeight: '800' },
-  enrollSubtitle: { color: colors.muted, fontSize: 12.5, marginTop: 2 },
+  // Modal del PIN: error y enlace para restablecerlo
+  pinErrorBox: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'stretch', backgroundColor: colors.redSoft, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 10 },
+  pinErrorText: { flex: 1, color: colors.red, fontSize: 13, fontWeight: '700' },
+  pinResetLink: { alignSelf: 'center', paddingVertical: 8, marginTop: 4 },
+  pinResetText: { color: colors.primaryText, fontSize: 13.5, fontWeight: '700', textDecorationLine: 'underline' },
 
   // Historial
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },

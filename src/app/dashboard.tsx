@@ -4,10 +4,8 @@ import * as Device from 'expo-device';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Image, Modal, Platform, Pressable, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import AttendanceCamera from '../components/AttendanceCamera';
-import type { EnrollmentCapture } from '../components/AttendanceCamera.web';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Image, Keyboard, Modal, Platform, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import MarkTimeline from '../components/MarkTimeline';
 import TabScreen from '../components/TabScreen';
 import { apiFetch } from '../services/api';
@@ -34,11 +32,6 @@ type Marcacion = MarkItem & {
   // Instante de la marcación (ms), para ordenar por fecha y hora.
   instante?: number;
 };
-
-// Las dos formas de marcar: el servidor rechaza una marcación sin credencial.
-type AttendanceCredential =
-  | { kind: 'face'; photoDataUrl: string; faceDescriptor: number[] }
-  | { kind: 'pin'; pin: string };
 
 type Tone = 'info' | 'ok' | 'error';
 
@@ -75,12 +68,11 @@ export default function Dashboard() {
   const [area, setArea] = useState<string | null>(null);
   const [shift, setShift] = useState<{ entryTime: string | null; exitTime: string | null }>({ entryTime: null, exitTime: null });
   const [hasAttendancePin, setHasAttendancePin] = useState(false);
-  const [methodPickerVisible, setMethodPickerVisible] = useState(false);
   const [pinPromptVisible, setPinPromptVisible] = useState(false);
   const [pinValue, setPinValue] = useState('');
-  const [cameraVisible, setCameraVisible] = useState(false);
-  const [cameraPurpose, setCameraPurpose] = useState<'attendance' | 'enrollment'>('attendance');
-  const [faceEnrolled, setFaceEnrolled] = useState<boolean | null>(null);
+  // Error del PIN dentro del modal (p. ej. «El PIN no es correcto»).
+  const [pinError, setPinError] = useState('');
+  const pinInputRef = useRef<TextInput>(null);
   const [showPushPrompt, setShowPushPrompt] = useState(false);
   const [pushActivating, setPushActivating] = useState(false);
   const [pushMessage, setPushMessage] = useState('');
@@ -130,16 +122,6 @@ export default function Dashboard() {
     loadProfilePhoto();
     return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [email]));
-
-  useEffect(() => {
-    if (!email) return;
-    apiFetch('/api/attendance/face-status')
-      .then(async (response) => {
-        const data = await response.json().catch(() => ({}));
-        if (response.ok) setFaceEnrolled(Boolean(data.enrolled));
-      })
-      .catch((err) => console.log('No se pudo consultar el registro facial:', err));
-  }, [email]);
 
   useEffect(() => {
     if (!email || Platform.OS !== 'web') return;
@@ -343,101 +325,55 @@ export default function Dashboard() {
     return true;
   };
 
-  const openPinPrompt = () => {
-    setMethodPickerVisible(false);
+  // Se marca solo con el PIN de asistencia (el reconocimiento facial se retiró).
+  const openPinPrompt = (error = '') => {
     if (alreadyDone()) return;
     if (!hasAttendancePin) {
       notify(tr('You do not have an attendance PIN yet. Ask your administrator for one.', 'Todavía no tienes PIN de asistencia. Solicítalo a administración.'), 'error');
       return;
     }
     setPinValue('');
+    setPinError(error);
     setMessage('');
     setPinPromptVisible(true);
   };
 
-  const openEnrollmentFlow = () => {
-    setMethodPickerVisible(false);
-    setCameraPurpose('enrollment');
-    setMessage('');
-    setCameraVisible(true);
-  };
-
-  const openCameraFlow = () => {
-    setMethodPickerVisible(false);
-    if (alreadyDone()) return;
-    if (faceEnrolled === false) {
-      openEnrollmentFlow();
-      return;
-    }
-    setCameraPurpose('attendance');
-    setMessage('');
-    setCameraVisible(true);
-  };
-
-  // Un botón de marcar: si hay PIN y rostro se pregunta cuál usar; si solo hay
-  // uno, va directo. Un fichaje sin verificar no se permite (el backend tampoco).
   const startMark = (tipo: 'Entrada' | 'Salida') => {
     if (alreadyDone() || tipo !== siguienteTipo) return;
-    const canFace = faceEnrolled === true;
-    if (hasAttendancePin && canFace) {
-      setMessage('');
-      setMethodPickerVisible(true);
-    } else if (canFace) {
-      openCameraFlow();
-    } else if (hasAttendancePin) {
-      openPinPrompt();
-    } else if (faceEnrolled === false) {
-      setMethodPickerVisible(true);
-    } else {
-      openPinPrompt();
+    openPinPrompt();
+  };
+
+  // Lleva a Perfil, a la tarjeta «Cambiar PIN de asistencia».
+  const goToPinReset = () => {
+    Keyboard.dismiss();
+    setPinPromptVisible(false);
+    router.push({ pathname: '/perfil', params: { ...session, seccion: 'pin' } });
+  };
+
+  const onPinChange = (text: string) => {
+    const digits = text.replace(/[^0-9]/g, '').slice(0, 6);
+    setPinValue(digits);
+    if (pinError) setPinError('');
+    // Con los 6 dígitos el teclado ya no hace falta: se cierra.
+    if (digits.length === 6) {
+      pinInputRef.current?.blur();
+      Keyboard.dismiss();
     }
   };
 
   const confirmPinMark = () => {
     const pin = pinValue.trim();
     if (!/^[0-9]{6}$/.test(pin)) {
-      notify(tr('The PIN must be exactly 6 digits', 'El PIN debe tener exactamente 6 dígitos'), 'error');
+      setPinError(tr('The PIN must be exactly 6 digits', 'El PIN debe tener exactamente 6 dígitos'));
       return;
     }
+    Keyboard.dismiss();
     setPinPromptVisible(false);
-    submitAttendance({ kind: 'pin', pin });
+    submitAttendance(pin);
   };
 
-  const handleMarcar = (photoDataUrl: string, faceDescriptor: number[]) =>
-    submitAttendance({ kind: 'face', photoDataUrl, faceDescriptor });
-
-  const handleEnrollFace = async (_photoDataUrl: string, _faceDescriptor: number[], captures?: EnrollmentCapture[]) => {
-    setCameraVisible(false);
-    setLoading(true);
-    notify(tr('Registering your face…', 'Registrando tu rostro…'), 'info');
-    try {
-      if (!captures || captures.length !== 3) throw new Error(tr('You must complete the three face captures', 'Debes completar las tres capturas del rostro'));
-      const response = await apiFetch('/api/attendance/face-enroll-3', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ captures, faceModel: 'human-faceres-v1' }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || 'No se pudo registrar el rostro');
-      setFaceEnrolled(true);
-      notify(data.message || tr('Face registered successfully', 'Rostro registrado correctamente'), 'ok');
-    } catch (error: any) {
-      notify(error.message || 'No se pudo registrar el rostro', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Con `face` se envía la plantilla y el servidor verifica la identidad; con
-  // `pin`, el PIN de asistencia. Además van la ubicación y el tipo de marcación.
-  const submitAttendance = async (credential: AttendanceCredential) => {
-    if (credential.kind === 'face' &&
-      (!credential.photoDataUrl || !Array.isArray(credential.faceDescriptor) || credential.faceDescriptor.length < 64)) {
-      notify(tr('You must take a photo to verify your identity', 'Debes tomar una fotografía para verificar tu identidad'), 'error');
-      return;
-    }
-
-    setCameraVisible(false);
+  // Envía el PIN de asistencia con la ubicación y el tipo de marcación.
+  const submitAttendance = async (pin: string) => {
     setLoading(true);
     setMessage('');
     try {
@@ -475,9 +411,7 @@ export default function Dashboard() {
             checkType: siguienteTipo === 'Entrada' ? 0 : 1,
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
-            ...(credential.kind === 'face'
-              ? { photoData: credential.photoDataUrl, faceDescriptor: credential.faceDescriptor, faceModel: 'human-faceres-v1' }
-              : { attendancePin: credential.pin }),
+            attendancePin: pin,
           }),
           signal: controller.signal,
         });
@@ -489,15 +423,16 @@ export default function Dashboard() {
         }
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
-          const similarityDetail = errData.code === 'FACE_NOT_MATCHED' && Number.isFinite(Number(errData.similarity))
-            ? ` Coincidencia detectada: ${Math.round(Number(errData.similarity) * 100)}%.`
-            : '';
-          throw new Error(`${errData.message || `Error del servidor (${res.status})`}${similarityDetail}`);
+          // PIN incorrecto: se vuelve a pedir, con el enlace para restablecerlo.
+          if (errData.code === 'ATTENDANCE_PIN_NOT_MATCHED' || errData.code === 'ATTENDANCE_PIN_INVALID_FORMAT') {
+            openPinPrompt(errData.message || tr('The PIN is not correct.', 'El PIN no es correcto.'));
+            return;
+          }
+          throw new Error(errData.message || `Error del servidor (${res.status})`);
         }
         const registerData = await res.json().catch(() => ({}));
         registrationMessage = registerData.message || '';
         registeredLogId = registerData.attendanceLogId ? String(registerData.attendanceLogId) : '';
-        if (registerData.faceEnrolled || registerData.faceVerified) setFaceEnrolled(true);
       } catch (apiErr: any) {
         clearTimeout(timeoutId);
         if (apiErr.name === 'AbortError') {
@@ -632,20 +567,6 @@ export default function Dashboard() {
           <Text style={styles.actionText}>{tr('Clock\nout', 'Marcar\nSalida')}</Text>
         </TouchableOpacity>
       </View>
-
-      {/* Alta facial pendiente: no bloquea el marcado con PIN, solo lo sugiere */}
-      {faceEnrolled === false && (
-        <TouchableOpacity style={styles.enrollCard} onPress={openEnrollmentFlow} disabled={loading} activeOpacity={0.8}>
-          <View style={styles.enrollIcon}>
-            <Ionicons name="scan-outline" size={20} color={colors.amber} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.enrollTitle}>{tr('Register your face', 'Registra tu rostro')}</Text>
-            <Text style={styles.enrollSubtitle}>{tr('Pending · takes 30 seconds', 'Pendiente · toma 30 segundos')}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-        </TouchableOpacity>
-      )}
     </>
   );
 
@@ -698,55 +619,6 @@ export default function Dashboard() {
         )}
       </TabScreen>
 
-      {/* ¿Con qué se verifica la marcación? */}
-      <Modal visible={methodPickerVisible} transparent animationType="fade" onRequestClose={() => setMethodPickerVisible(false)}>
-        <Pressable style={styles.overlay} onPress={() => setMethodPickerVisible(false)}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <View style={[styles.modalIcon, { backgroundColor: siguienteTipo === 'Entrada' ? colors.primarySoft : colors.orangeSoft }]}>
-              <Ionicons name={siguienteTipo === 'Entrada' ? 'enter-outline' : 'exit-outline'} size={28} color={siguienteTipo === 'Entrada' ? colors.primary : colors.orange} />
-            </View>
-            <Text style={styles.modalTitle}>{siguienteTipo === 'Entrada' ? tr('Clock in', 'Marcar entrada') : tr('Clock out', 'Marcar salida')}</Text>
-            <Text style={styles.modalText}>{tr('How do you want to verify your identity?', '¿Cómo quieres verificar tu identidad?')}</Text>
-
-            {hasAttendancePin && (
-              <TouchableOpacity style={styles.option} onPress={openPinPrompt} activeOpacity={0.8}>
-                <View style={[styles.optionIcon, { backgroundColor: colors.primarySoft }]}>
-                  <Ionicons name="keypad-outline" size={21} color={colors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.optionTitle}>{tr('Attendance PIN', 'PIN de asistencia')}</Text>
-                  <Text style={styles.optionHint}>{tr('Your 6 digits', 'Tus 6 dígitos')}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.faint} />
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity style={styles.option} onPress={faceEnrolled === false ? openEnrollmentFlow : openCameraFlow} activeOpacity={0.8}>
-              <View style={[styles.optionIcon, { backgroundColor: colors.greenSoft }]}>
-                <Ionicons name="scan-outline" size={21} color={colors.green} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.optionTitle}>
-                  {faceEnrolled === false ? tr('Register my face', 'Registrar mi rostro') : tr('Face recognition', 'Reconocimiento facial')}
-                </Text>
-                <Text style={styles.optionHint}>
-                  {faceEnrolled === false ? tr('Required before marking with your face', 'Necesario antes de marcar con tu rostro') : tr('Take a selfie', 'Tómate una foto')}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.faint} />
-            </TouchableOpacity>
-
-            {!hasAttendancePin && faceEnrolled === false && (
-              <Text style={styles.modalMessage}>{tr('Or ask your administrator for an attendance PIN.', 'O solicita a administración tu PIN de asistencia.')}</Text>
-            )}
-
-            <TouchableOpacity onPress={() => setMethodPickerVisible(false)} style={styles.modalLater}>
-              <Text style={styles.modalLaterText}>{tr('Cancel', 'Cancelar')}</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
       {/* PIN */}
       <Modal visible={pinPromptVisible} transparent animationType="fade" onRequestClose={() => setPinPromptVisible(false)}>
         <View style={styles.overlay}>
@@ -761,8 +633,9 @@ export default function Dashboard() {
                 : tr('Confirm your clock out with your attendance PIN.', 'Confirma tu salida con tu PIN de asistencia.')}
             </Text>
             <TextInput
+              ref={pinInputRef}
               value={pinValue}
-              onChangeText={(text: string) => setPinValue(text.replace(/[^0-9]/g, '').slice(0, 6))}
+              onChangeText={onPinChange}
               placeholder="••••••"
               placeholderTextColor={colors.faint}
               keyboardType="number-pad"
@@ -773,9 +646,20 @@ export default function Dashboard() {
               textContentType="oneTimeCode"
               importantForAutofill="no"
               autoFocus
-              style={styles.pinInput}
+              style={[styles.pinInput, !!pinError && { borderColor: colors.red }]}
               onSubmitEditing={confirmPinMark}
             />
+            {!!pinError && (
+              <View style={styles.pinErrorBox}>
+                <Ionicons name="alert-circle" size={17} color={colors.red} />
+                <Text style={styles.pinErrorText}>{pinError}</Text>
+              </View>
+            )}
+            <TouchableOpacity onPress={goToPinReset} style={styles.pinResetLink} accessibilityRole="link">
+              <Text style={styles.pinResetText}>
+                {pinError ? tr('Forgot your PIN? Reset PIN', '¿Olvidaste tu PIN? Restablecer PIN') : tr('Reset PIN', 'Restablecer PIN')}
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.modalButton, siguienteTipo === 'Salida' && { backgroundColor: colors.orange }, pinValue.trim().length !== 6 && styles.actionDisabled]}
               onPress={confirmPinMark}
@@ -784,7 +668,7 @@ export default function Dashboard() {
             >
               <Text style={styles.modalButtonText}>{siguienteTipo === 'Entrada' ? tr('Clock in', 'Marcar entrada') : tr('Clock out', 'Marcar salida')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setPinPromptVisible(false)} style={styles.modalLater}>
+            <TouchableOpacity onPress={() => { Keyboard.dismiss(); setPinPromptVisible(false); }} style={styles.modalLater}>
               <Text style={styles.modalLaterText}>{tr('Cancel', 'Cancelar')}</Text>
             </TouchableOpacity>
           </View>
@@ -813,14 +697,6 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
-
-      <AttendanceCamera
-        visible={cameraVisible}
-        attendanceType={siguienteTipo}
-        mode={cameraPurpose}
-        onCancel={() => setCameraVisible(false)}
-        onConfirm={cameraPurpose === 'enrollment' ? handleEnrollFace : handleMarcar}
-      />
     </>
   );
 }

@@ -73,7 +73,7 @@ const confirmAction = (title: string, prompt: string, confirmText: string, onCon
 
 /**
  * Pestaña Configuración. Lo que se ve depende del rol:
- * - Todos: idioma, notificaciones, registro facial, seguridad, solicitudes y salir.
+ * - Todos: idioma, notificaciones, PIN y contraseña, solicitudes y salir.
  * - ADMIN y SUPER_ADMIN: además, la asistencia general de los colaboradores.
  * - SUPER_ADMIN: además, los dispositivos autorizados (cambiar el equipo de un
  *   empleado que perdió o le robaron el suyo, enviar cambio de contraseña) y las
@@ -92,7 +92,6 @@ export default function ConfiguracionScreen() {
   const [pushState, setPushState] = useState<PushState>(Platform.OS === 'web' ? 'default' : 'native');
   const [pushMessage, setPushMessage] = useState('');
   const [pushBusy, setPushBusy] = useState(false);
-  const [faceEnrolled, setFaceEnrolled] = useState<boolean | null>(null);
   const [hasPin, setHasPin] = useState<boolean | null>(null);
 
   // Administración (SUPER_ADMIN)
@@ -120,9 +119,6 @@ export default function ConfiguracionScreen() {
     if (Platform.OS === 'web') {
       getWebPushPermission().then((p) => setPushState(p as PushState)).catch(() => setPushState('unsupported'));
     }
-    apiFetch('/api/attendance/face-status')
-      .then(async (r) => { if (r.ok) setFaceEnrolled(Boolean((await r.json().catch(() => ({}))).enrolled)); })
-      .catch(() => undefined);
     apiFetch('/api/attendance/me/biometric-pin')
       .then(async (r) => { if (r.ok) setHasPin(Boolean((await r.json().catch(() => ({}))).hasAttendancePin)); })
       .catch(() => undefined);
@@ -360,18 +356,10 @@ export default function ConfiguracionScreen() {
       <Text style={styles.sectionLabel}>{tr('SECURITY', 'SEGURIDAD')}</Text>
       <View style={styles.card}>
         <Row
-          icon="scan-outline" iconColor={colors.green} iconBg={colors.greenSoft}
-          title={tr('Face recognition', 'Reconocimiento facial')}
-          subtitle={faceEnrolled === null ? '…' : faceEnrolled ? tr('Your face is registered', 'Tu rostro está registrado') : tr('Pending: register it from Home', 'Pendiente: regístralo desde Inicio')}
-          onPress={faceEnrolled === false ? () => goToTab('inicio', session) : undefined}
-          right={faceEnrolled ? <Ionicons name="checkmark-circle" size={20} color={colors.green} /> : undefined}
-        />
-        <View style={styles.divider} />
-        <Row
           icon="keypad-outline" iconColor={colors.primary} iconBg={colors.primarySoft}
           title={tr('PIN and password', 'PIN y contraseña')}
           subtitle={hasPin === false ? tr('You have no attendance PIN yet', 'Aún no tienes PIN de asistencia') : tr('Change your attendance PIN or password', 'Cambia tu PIN de asistencia o tu contraseña')}
-          onPress={() => goToTab('perfil', session)}
+          onPress={() => router.push({ pathname: '/perfil', params: { ...session, seccion: 'pin' } })}
         />
       </View>
 
