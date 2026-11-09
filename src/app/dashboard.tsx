@@ -5,7 +5,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Image, Keyboard, Modal, Platform, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, Keyboard, Modal, Platform, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import MarkTimeline from '../components/MarkTimeline';
 import TabScreen from '../components/TabScreen';
 import { apiFetch } from '../services/api';
@@ -72,6 +72,8 @@ export default function Dashboard() {
   const [pinValue, setPinValue] = useState('');
   // Error del PIN dentro del modal (p. ej. «El PIN no es correcto»).
   const [pinError, setPinError] = useState('');
+  // El servidor dijo que el PIN no es correcto: recién entonces se ofrece restablecerlo.
+  const [pinWrong, setPinWrong] = useState(false);
   const pinInputRef = useRef<TextInput>(null);
   const [showPushPrompt, setShowPushPrompt] = useState(false);
   const [pushActivating, setPushActivating] = useState(false);
@@ -326,14 +328,15 @@ export default function Dashboard() {
   };
 
   // Se marca solo con el PIN de asistencia (el reconocimiento facial se retiró).
-  const openPinPrompt = (error = '') => {
+  const openPinPrompt = () => {
     if (alreadyDone()) return;
     if (!hasAttendancePin) {
       notify(tr('You do not have an attendance PIN yet. Ask your administrator for one.', 'Todavía no tienes PIN de asistencia. Solicítalo a administración.'), 'error');
       return;
     }
     setPinValue('');
-    setPinError(error);
+    setPinError('');
+    setPinWrong(false);
     setMessage('');
     setPinPromptVisible(true);
   };
@@ -368,17 +371,25 @@ export default function Dashboard() {
       return;
     }
     Keyboard.dismiss();
-    setPinPromptVisible(false);
     submitAttendance(pin);
   };
 
-  // Envía el PIN de asistencia con la ubicación y el tipo de marcación.
+  const closePinPrompt = () => {
+    Keyboard.dismiss();
+    setPinPromptVisible(false);
+  };
+
+  // Envía el PIN de asistencia con la ubicación y el tipo de marcación. El modal
+  // queda abierto («Verificando…») hasta que el servidor responde: si el PIN está
+  // mal se queda abierto con el campo en rojo; si no, se cierra y se avisa abajo.
   const submitAttendance = async (pin: string) => {
     setLoading(true);
+    setPinError('');
     setMessage('');
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
+        closePinPrompt();
         notify(tr('Location permission denied', 'Permiso de ubicación denegado'), 'error');
         return;
       }
@@ -417,19 +428,23 @@ export default function Dashboard() {
         });
         clearTimeout(timeoutId);
 
-        if (res.status === 403) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.message || 'Acceso Denegado: Tu IP no está autorizada. Conéctate al Wi-Fi de la oficina.');
-        }
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
-          // PIN incorrecto: se vuelve a pedir, con el enlace para restablecerlo.
+          // PIN incorrecto (el servidor responde 403): el modal sigue abierto, el
+          // campo en rojo y aparece «Restablecer PIN».
           if (errData.code === 'ATTENDANCE_PIN_NOT_MATCHED' || errData.code === 'ATTENDANCE_PIN_INVALID_FORMAT') {
-            openPinPrompt(errData.message || tr('The PIN is not correct.', 'El PIN no es correcto.'));
+            setPinValue('');
+            setPinWrong(errData.code === 'ATTENDANCE_PIN_NOT_MATCHED');
+            setPinError(errData.message || tr('The PIN is not correct.', 'El PIN no es correcto.'));
+            setTimeout(() => pinInputRef.current?.focus(), 50);
             return;
+          }
+          if (res.status === 403) {
+            throw new Error(errData.message || 'Acceso Denegado: Tu IP no está autorizada. Conéctate al Wi-Fi de la oficina.');
           }
           throw new Error(errData.message || `Error del servidor (${res.status})`);
         }
+        closePinPrompt();
         const registerData = await res.json().catch(() => ({}));
         registrationMessage = registerData.message || '';
         registeredLogId = registerData.attendanceLogId ? String(registerData.attendanceLogId) : '';
@@ -461,6 +476,7 @@ export default function Dashboard() {
       await refreshHistory();
       notify(registrationMessage || `${siguienteTipo} registrada correctamente`, 'ok');
     } catch (error: any) {
+      closePinPrompt();
       notify(error.message || 'No se pudo registrar la asistencia', 'error');
     } finally {
       setLoading(false);
@@ -620,7 +636,7 @@ export default function Dashboard() {
       </TabScreen>
 
       {/* PIN */}
-      <Modal visible={pinPromptVisible} transparent animationType="fade" onRequestClose={() => setPinPromptVisible(false)}>
+      <Modal visible={pinPromptVisible} transparent animationType="fade" onRequestClose={() => { if (!loading) closePinPrompt(); }}>
         <View style={styles.overlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalIcon}>
@@ -655,20 +671,22 @@ export default function Dashboard() {
                 <Text style={styles.pinErrorText}>{pinError}</Text>
               </View>
             )}
-            <TouchableOpacity onPress={goToPinReset} style={styles.pinResetLink} accessibilityRole="link">
-              <Text style={styles.pinResetText}>
-                {pinError ? tr('Forgot your PIN? Reset PIN', '¿Olvidaste tu PIN? Restablecer PIN') : tr('Reset PIN', 'Restablecer PIN')}
-              </Text>
-            </TouchableOpacity>
+            {pinWrong && (
+              <TouchableOpacity onPress={goToPinReset} style={styles.pinResetLink} accessibilityRole="link">
+                <Text style={styles.pinResetText}>{tr('Forgot your PIN? Reset PIN', '¿Olvidaste tu PIN? Restablecer PIN')}</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
-              style={[styles.modalButton, siguienteTipo === 'Salida' && { backgroundColor: colors.orange }, pinValue.trim().length !== 6 && styles.actionDisabled]}
+              style={[styles.modalButton, siguienteTipo === 'Salida' && { backgroundColor: colors.orange }, (loading || pinValue.trim().length !== 6) && styles.actionDisabled]}
               onPress={confirmPinMark}
-              disabled={pinValue.trim().length !== 6}
+              disabled={loading || pinValue.trim().length !== 6}
               activeOpacity={0.85}
             >
-              <Text style={styles.modalButtonText}>{siguienteTipo === 'Entrada' ? tr('Clock in', 'Marcar entrada') : tr('Clock out', 'Marcar salida')}</Text>
+              {loading
+                ? <ActivityIndicator color="#FFFFFF" />
+                : <Text style={styles.modalButtonText}>{siguienteTipo === 'Entrada' ? tr('Clock in', 'Marcar entrada') : tr('Clock out', 'Marcar salida')}</Text>}
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => { Keyboard.dismiss(); setPinPromptVisible(false); }} style={styles.modalLater}>
+            <TouchableOpacity onPress={closePinPrompt} disabled={loading} style={styles.modalLater}>
               <Text style={styles.modalLaterText}>{tr('Cancel', 'Cancelar')}</Text>
             </TouchableOpacity>
           </View>
