@@ -5,7 +5,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Keyboard, Modal, Platform, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import MarkTimeline from '../components/MarkTimeline';
 import TabScreen from '../components/TabScreen';
 import { apiFetch } from '../services/api';
@@ -317,7 +317,8 @@ export default function Dashboard() {
   const tieneSalidaHoy = hoyMarcaciones.some((m) => m.tipo === 'Salida');
   const completadoHoy = tieneEntradaHoy && tieneSalidaHoy;
   const siguienteTipo: 'Entrada' | 'Salida' = tieneEntradaHoy ? 'Salida' : 'Entrada';
-  const recentMarks = buildMarks(historyLogs, hoyMarcaciones, todayStr).slice(0, isWide ? 8 : 4);
+  // En Inicio solo las marcaciones de hoy; los días anteriores están en Historial.
+  const recentMarks = buildMarks(historyLogs, hoyMarcaciones, todayStr).filter((m) => m.fecha === todayStr);
 
   // ---- Marcar --------------------------------------------------------------
 
@@ -591,7 +592,7 @@ export default function Dashboard() {
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
           <Ionicons name="time-outline" size={20} color={colors.text} />
-          <Text style={styles.sectionTitle}>{tr('Attendance history', 'Historial de Marcaciones')}</Text>
+          <Text style={styles.sectionTitle}>{tr("Today's records", 'Marcaciones de hoy')}</Text>
         </View>
         <TouchableOpacity style={styles.linkButton} onPress={() => goToTab('historial', session)} activeOpacity={0.75}>
           <Text style={styles.linkButtonText}>{tr('View all', 'Ver todo')}</Text>
@@ -601,8 +602,8 @@ export default function Dashboard() {
       {recentMarks.length === 0 ? (
         <View style={styles.empty}>
           <Ionicons name="calendar-clear-outline" size={28} color={colors.faint} />
-          <Text style={styles.emptyTitle}>{tr('No records yet', 'Aún no hay marcaciones')}</Text>
-          <Text style={styles.emptyHint}>{tr('Your clock-ins and clock-outs will show up here', 'Tus entradas y salidas aparecerán aquí')}</Text>
+          <Text style={styles.emptyTitle}>{tr('No records today', 'Aún no marcas hoy')}</Text>
+          <Text style={styles.emptyHint}>{tr('Your clock-in and clock-out for today will show up here', 'Tu entrada y salida de hoy aparecerán aquí')}</Text>
         </View>
       ) : (
         <MarkTimeline marks={recentMarks} showLocation />
@@ -637,7 +638,8 @@ export default function Dashboard() {
 
       {/* PIN */}
       <Modal visible={pinPromptVisible} transparent animationType="fade" onRequestClose={() => { if (!loading) closePinPrompt(); }}>
-        <View style={styles.overlay}>
+        {/* El modal sube con el teclado para que el botón no quede tapado. */}
+        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalCard}>
             <View style={styles.modalIcon}>
               <Ionicons name="keypad-outline" size={26} color={colors.primary} />
@@ -690,7 +692,7 @@ export default function Dashboard() {
               <Text style={styles.modalLaterText}>{tr('Cancel', 'Cancelar')}</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Avisos push en la web */}
