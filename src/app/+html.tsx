@@ -253,9 +253,10 @@ export default function Root({ children }: PropsWithChildren) {
         <ScrollViewStyleReset />
       </head>
       <body>
-        <div id="hwperu-boot-splash" aria-hidden="true">
-          <img src="/icons/hwperu-splash-v5.png" alt="" />
-        </div>
+        {/* Solo el fondo: el logo lo trae la animación de arranque (StartupSequence),
+            que lo hace entrar de derecha a izquierda. Si aquí estuviera quieto, se
+            vería dos veces. */}
+        <div id="hwperu-boot-splash" aria-hidden="true" />
         {children}
       </body>
     </html>
