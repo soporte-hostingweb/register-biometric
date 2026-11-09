@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -191,16 +192,25 @@ export default function PerfilScreen() {
         mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.55,
-        base64: true,
+        quality: 1,
       });
 
-      if (!result.canceled && result.assets?.[0]?.base64) {
+      if (!result.canceled && result.assets?.[0]?.uri) {
         setPhotoSaving(true);
+        // La foto del celular pesa varios MB y el servidor acepta hasta 500 KB:
+        // se recorta al centro, se reduce a 512x512 y se guarda como JPEG.
         const asset = result.assets[0];
-        const mimeType = asset.mimeType && ['image/jpeg', 'image/png', 'image/webp'].includes(asset.mimeType)
-          ? asset.mimeType : 'image/jpeg';
-        const photoData = `data:${mimeType};base64,${asset.base64}`;
+        const side = Math.min(asset.width || 0, asset.height || 0);
+        const actions: ImageManipulator.Action[] = [];
+        if (side > 0 && asset.width !== asset.height) {
+          actions.push({ crop: { originX: (asset.width - side) / 2, originY: (asset.height - side) / 2, width: side, height: side } });
+        }
+        actions.push({ resize: { width: 512, height: 512 } });
+        const small = await ImageManipulator.manipulateAsync(asset.uri, actions, {
+          compress: 0.75, format: ImageManipulator.SaveFormat.JPEG, base64: true,
+        });
+        if (!small.base64) throw new Error('No se pudo procesar la foto.');
+        const photoData = `data:image/jpeg;base64,${small.base64}`;
         const response = await apiFetch('/api/auth/profile/photo', {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ photoData }),
         });
