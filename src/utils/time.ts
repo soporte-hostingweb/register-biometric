@@ -157,7 +157,6 @@ export function formatShiftTime(value: unknown): string | null {
    --------------------------------------------------------------------------- */
 
 let desfaseDelServidor = 0;
-let desfaseConocido = false;
 
 /** Anota el header Date de una respuesta. `enviado` y `recibido` en ms del celular. */
 export function noteServerDate(dateHeader: string | null | undefined, enviado: number, recibido: number): void {
@@ -168,14 +167,9 @@ export function noteServerDate(dateHeader: string | null | undefined, enviado: n
   if (recibido - enviado > 10_000) return;
   // El header tiene resolución de 1 s: se toma la mitad del viaje y medio segundo.
   desfaseDelServidor = servidor + 500 - (enviado + recibido) / 2;
-  desfaseConocido = true;
 }
 
 /** La hora actual del servidor (o la del celular si aún no se conoce el desfase). */
 export function serverNow(): number {
   return Date.now() + desfaseDelServidor;
-}
-
-export function serverClockKnown(): boolean {
-  return desfaseConocido;
 }
