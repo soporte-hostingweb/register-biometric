@@ -36,7 +36,7 @@ export default function BottomTabs({ active, fullName, rol, email }: Props) {
               accessibilityState={{ selected: isActive }}
               activeOpacity={0.7}
             >
-              <Ionicons name={isActive ? tab.iconActive : tab.icon} size={24} color={isActive ? colors.primary : colors.faint} />
+              <Ionicons name={isActive ? tab.iconActive : tab.icon} size={22} color={isActive ? colors.primary : colors.faint} />
               <Text style={[styles.label, isActive && styles.labelActive]} numberOfLines={1}>{tr(tab.en, tab.es)}</Text>
               <View style={[styles.indicator, isActive && styles.indicatorActive]} />
             </TouchableOpacity>
@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   tab: { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 2 },
-  label: { fontSize: 12, fontWeight: '600', color: colors.faint },
+  label: { fontSize: 11.5, fontWeight: '600', color: colors.faint },
   labelActive: { color: colors.primary, fontWeight: '800' },
   indicator: { marginTop: 4, height: 3, width: 46, borderRadius: 2, backgroundColor: 'transparent' },
   indicatorActive: { backgroundColor: colors.primary },

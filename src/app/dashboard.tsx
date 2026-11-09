@@ -497,7 +497,7 @@ export default function Dashboard() {
         <View style={styles.avatar}>
           {profilePhoto
             ? <Image source={{ uri: profilePhoto }} style={styles.avatarImage} />
-            : <Ionicons name="person" size={36} color={colors.primary} />}
+            : <Ionicons name="person" size={28} color={colors.primary} />}
         </View>
         <View style={styles.onlineDot} />
       </View>
@@ -505,13 +505,13 @@ export default function Dashboard() {
         <Text style={styles.profileName} numberOfLines={2}>{fullName}</Text>
         {!!cargo && (
           <View style={styles.profileMetaRow}>
-            <Ionicons name="briefcase" size={15} color={colors.muted} />
+            <Ionicons name="briefcase" size={13} color={colors.muted} />
             <Text style={styles.profileMeta} numberOfLines={1}>{cargo}</Text>
           </View>
         )}
         {!!area && (
           <View style={styles.profileMetaRow}>
-            <Ionicons name="business" size={15} color={colors.muted} />
+            <Ionicons name="business" size={13} color={colors.muted} />
             <Text style={styles.profileMeta} numberOfLines={1}>{tr('Area', 'Área')}: {area}</Text>
           </View>
         )}
@@ -528,7 +528,7 @@ export default function Dashboard() {
       <View style={styles.clockIconRow}>
         <View style={styles.clockLine} />
         <View style={styles.clockIcon}>
-          <Ionicons name="time-outline" size={44} color={colors.primary} />
+          <Ionicons name="time-outline" size={26} color={colors.primary} />
         </View>
         <View style={styles.clockLine} />
       </View>
@@ -541,7 +541,7 @@ export default function Dashboard() {
   const markSection = (
     <>
       <View style={[styles.banner, { backgroundColor: banner.bg, borderColor: banner.border }]}>
-        <Ionicons name={banner.icon} size={24} color={banner.fg} />
+        <Ionicons name={banner.icon} size={20} color={banner.fg} />
         <Text style={[styles.bannerText, { color: banner.fg }]}>{banner.text}</Text>
       </View>
 
@@ -553,7 +553,7 @@ export default function Dashboard() {
           activeOpacity={0.85}
           accessibilityLabel={tr('Clock in', 'Marcar entrada')}
         >
-          <Ionicons name="enter-outline" size={34} color="#FFFFFF" />
+          <Ionicons name="enter-outline" size={26} color="#FFFFFF" />
           <Text style={styles.actionText}>{tr('Clock\nin', 'Marcar\nEntrada')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -563,7 +563,7 @@ export default function Dashboard() {
           activeOpacity={0.85}
           accessibilityLabel={tr('Clock out', 'Marcar salida')}
         >
-          <Ionicons name="exit-outline" size={34} color="#FFFFFF" />
+          <Ionicons name="exit-outline" size={26} color="#FFFFFF" />
           <Text style={styles.actionText}>{tr('Clock\nout', 'Marcar\nSalida')}</Text>
         </TouchableOpacity>
       </View>
@@ -574,7 +574,7 @@ export default function Dashboard() {
     <View style={styles.card}>
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <Ionicons name="time-outline" size={24} color={colors.text} />
+          <Ionicons name="time-outline" size={20} color={colors.text} />
           <Text style={styles.sectionTitle}>{tr('Attendance history', 'Historial de Marcaciones')}</Text>
         </View>
         <TouchableOpacity style={styles.linkButton} onPress={() => goToTab('historial', session)} activeOpacity={0.75}>

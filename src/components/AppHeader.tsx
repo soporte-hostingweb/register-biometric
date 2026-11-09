@@ -129,14 +129,14 @@ export default function AppHeader({ title, active, fullName, rol, email }: Props
   ];
 
   return (
-    <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+    <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
       <View style={styles.row}>
         <TouchableOpacity style={styles.iconButton} onPress={() => setMenuVisible(true)} accessibilityLabel={tr('Open menu', 'Abrir menú')}>
-          <Ionicons name="menu" size={30} color="#FFFFFF" />
+          <Ionicons name="menu" size={25} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
         <TouchableOpacity style={styles.iconButton} onPress={openNotifications} accessibilityLabel={tr('Notifications', 'Notificaciones')}>
-          <Ionicons name="notifications-outline" size={27} color="#FFFFFF" />
+          <Ionicons name="notifications-outline" size={23} color="#FFFFFF" />
           {unread > 0 && (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{unread > 9 ? '9+' : unread}</Text>
@@ -221,10 +221,10 @@ export default function AppHeader({ title, active, fullName, rol, email }: Props
 }
 
 const styles = StyleSheet.create({
-  header: { backgroundColor: colors.header, paddingHorizontal: 14, paddingBottom: 30 },
+  header: { backgroundColor: colors.header, paddingHorizontal: 12, paddingBottom: 26 },
   row: { flexDirection: 'row', alignItems: 'center', width: '100%', maxWidth: 1100, alignSelf: 'center' },
-  iconButton: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
-  title: { flex: 1, textAlign: 'center', color: '#FFFFFF', fontSize: 22, fontWeight: '700' },
+  iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  title: { flex: 1, textAlign: 'center', color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
   badge: {
     position: 'absolute', top: 5, right: 4, minWidth: 18, height: 18, paddingHorizontal: 4, borderRadius: 9,
     backgroundColor: '#FF4D4F', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.header,

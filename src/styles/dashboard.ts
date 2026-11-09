@@ -7,41 +7,41 @@ export const styles = StyleSheet.create({
   wideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 18 },
   wideCol: { flex: 1, gap: 14, minWidth: 0 },
 
-  card: { backgroundColor: colors.card, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 16, ...cardShadow },
+  card: { backgroundColor: colors.card, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 14, ...cardShadow },
 
   // Colaborador
-  profileCard: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  avatarWrap: { width: 78, height: 78 },
-  avatar: { width: 78, height: 78, borderRadius: 39, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  profileCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatarWrap: { width: 58, height: 58 },
+  avatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   avatarImage: { width: '100%', height: '100%' },
-  onlineDot: { position: 'absolute', right: 2, bottom: 4, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.green, borderWidth: 3, borderColor: colors.card },
-  profileInfo: { flex: 1, minWidth: 0, gap: 3 },
-  profileName: { color: colors.text, fontSize: 18, fontWeight: '800' },
+  onlineDot: { position: 'absolute', right: 0, bottom: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: colors.green, borderWidth: 2, borderColor: colors.card },
+  profileInfo: { flex: 1, minWidth: 0, gap: 2 },
+  profileName: { color: colors.text, fontSize: 16, fontWeight: '800' },
   profileMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  profileMeta: { color: colors.muted, fontSize: 13.5, flexShrink: 1 },
-  profileButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.primarySoft, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 },
-  profileButtonText: { color: colors.primaryText, fontSize: 13, fontWeight: '700' },
+  profileMeta: { color: colors.muted, fontSize: 12.5, flexShrink: 1 },
+  profileButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.primarySoft, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14 },
+  profileButtonText: { color: colors.primaryText, fontSize: 12, fontWeight: '700' },
 
   // Reloj
-  clockCard: { borderRadius: 20, borderWidth: 1, borderColor: '#CFDDF6', backgroundColor: '#E4ECFB', alignItems: 'center', paddingVertical: 18, paddingHorizontal: 12, overflow: 'hidden' },
+  clockCard: { borderRadius: 20, borderWidth: 1, borderColor: '#CFDDF6', backgroundColor: '#E4ECFB', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 12, overflow: 'hidden' },
   clockIconRow: { flexDirection: 'row', alignItems: 'center', gap: 14, width: '100%' },
   clockLine: { flex: 1, height: 2, borderRadius: 1, backgroundColor: '#C3D4F3' },
-  clockIcon: { width: 68, height: 68, borderRadius: 34, borderWidth: 4, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
-  clock: { color: colors.text, fontSize: 56, fontWeight: '900', letterSpacing: 1, marginTop: 6, fontVariant: ['tabular-nums'] },
-  clockDate: { color: colors.muted, fontSize: 17, fontWeight: '500' },
-  clockShift: { color: colors.primaryText, fontSize: 12.5, fontWeight: '700', marginTop: 6 },
+  clockIcon: { width: 42, height: 42, borderRadius: 21, borderWidth: 3, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
+  clock: { color: colors.text, fontSize: 38, fontWeight: '800', letterSpacing: 0.5, marginTop: 4, fontVariant: ['tabular-nums'] },
+  clockDate: { color: colors.muted, fontSize: 14, fontWeight: '500' },
+  clockShift: { color: colors.primaryText, fontSize: 12, fontWeight: '700', marginTop: 4 },
 
   // Estado del día
-  banner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 16, borderWidth: 1, paddingVertical: 13, paddingHorizontal: 14 },
-  bannerText: { fontSize: 14.5, fontWeight: '700', textAlign: 'center', flexShrink: 1 },
+  banner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 14, borderWidth: 1, paddingVertical: 9, paddingHorizontal: 12 },
+  bannerText: { fontSize: 13, fontWeight: '700', textAlign: 'center', flexShrink: 1 },
 
   // Botones
   actions: { flexDirection: 'row', gap: 12 },
-  action: { flex: 1, minHeight: 74, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 12, ...cardShadow, shadowOpacity: 0.18 },
+  action: { flex: 1, minHeight: 56, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 10, ...cardShadow, shadowOpacity: 0.18 },
   actionIn: { backgroundColor: colors.primary },
   actionOut: { backgroundColor: colors.orange },
   actionDisabled: { opacity: 0.4 },
-  actionText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700', lineHeight: 21 },
+  actionText: { color: '#FFFFFF', fontSize: 14.5, fontWeight: '700', lineHeight: 18 },
 
   // Modal del PIN: error y enlace para restablecerlo
   pinErrorBox: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'stretch', backgroundColor: colors.redSoft, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 10 },
@@ -52,9 +52,9 @@ export const styles = StyleSheet.create({
   // Historial
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
-  sectionTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
-  linkButton: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.primarySoft, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16 },
-  linkButtonText: { color: colors.primaryText, fontSize: 13, fontWeight: '700' },
+  sectionTitle: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  linkButton: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.primarySoft, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14 },
+  linkButtonText: { color: colors.primaryText, fontSize: 12, fontWeight: '700' },
   empty: { alignItems: 'center', gap: 6, paddingVertical: 22 },
   emptyTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
   emptyHint: { color: colors.muted, fontSize: 13, textAlign: 'center' },

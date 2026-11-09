@@ -52,5 +52,5 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 26,
     overflow: 'hidden',
   },
-  content: { width: '100%', alignSelf: 'center', paddingHorizontal: 14, paddingTop: 16, paddingBottom: 28, gap: 14 },
+  content: { width: '100%', alignSelf: 'center', paddingHorizontal: 14, paddingTop: 14, paddingBottom: 24, gap: 12 },
 });
