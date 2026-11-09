@@ -39,7 +39,8 @@ export default function TabScreen({ title, active, children, maxWidth = 560, ref
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.header },
+  // Fondo claro: si fuera azul se vería en las esquinas redondeadas de la barra inferior.
+  page: { flex: 1, backgroundColor: colors.background },
   sheet: {
     flex: 1,
     marginTop: -18,
