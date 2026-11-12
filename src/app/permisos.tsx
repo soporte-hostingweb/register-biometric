@@ -75,8 +75,35 @@ export default function PermissionsScreen() {
   // '' = nada elegido todavia, que es como entra la pantalla.
   const [family, setFamily] = useState<'' | 'PERMISSION' | 'VACATION'>('');
 
+  // Issue #42: saldo por año y validador único ANTES de enviar (las mismas reglas que verá Gerencia).
+  const [misVacaciones, setMisVacaciones] = useState<any>(null);
+  const [validacion, setValidacion] = useState<any>(null), [validando, setValidando] = useState(false);
+  // Los 15 dias seguidos solo se toman si el trabajador lo pide por escrito (D. Leg. 713, art. 17).
+  const [quinceSeguidos, setQuinceSeguidos] = useState(false);
+
   const load = async () => { const res = await apiFetch('/api/attendance/permissions/me'); if (res.ok) setItems(await res.json()); };
-  useEffect(() => { load(); }, []);
+  const loadMisVacaciones = async () => { try { const res = await apiFetch('/api/mis-vacaciones'); if (res.ok) setMisVacaciones(await res.json()); } catch { setMisVacaciones(null); } };
+  useEffect(() => { load(); loadMisVacaciones(); }, []);
+  useEffect(() => {
+    setValidacion(null);
+    if (family !== 'VACATION' || !date || !endDate || endDate < date) return;
+    let vigente = true;
+    setValidando(true);
+    apiFetch('/api/mis-vacaciones/validar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ desde: date, hasta: endDate, quinceSeguidosPedidoPorEscrito: quinceSeguidos }) })
+      .then(async res => { const data = await res.json(); if (vigente) setValidacion(res.ok ? data : { ok: false, errores: [{ mensaje: data.error || 'No se pudo validar.' }] }); })
+      .catch(() => { if (vigente) setValidacion(null); })
+      .finally(() => { if (vigente) setValidando(false); });
+    return () => { vigente = false; };
+  }, [family, date, endDate, quinceSeguidos]);
+  const verFut = async (futId: number) => {
+    if (Platform.OS !== 'web') { setMessage('Descarga el FUT desde la versión web.'); return; }
+    const res = await apiFetch(`/api/mis-vacaciones/futs/${futId}/pdf`);
+    if (!res.ok) { setMessage('No se pudo abrir el FUT.'); return; }
+    const url = URL.createObjectURL(await res.blob());
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+  const fechaCorta = (dia?: string | null) => dia ? `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}` : '';
   const resetFields = (nextType: string) => { setType(nextType); setDate(''); setEndDate(''); setStartTime(''); setEndTime(''); setReason(''); setMessage(''); };
   // Cambiar de familia limpia el formulario entero. Dejar escrita la fecha de
   // un permiso al pasar a vacaciones es justo como se mandan solicitudes que
@@ -96,14 +123,14 @@ export default function PermissionsScreen() {
       if (isTimeRange(type) && (!startTime || !endTime || endTime <= startTime)) { setMessage('Selecciona una hora de inicio y fin válida.'); return; }
       if (reason.trim().length < 5) { setMessage('Escribe el motivo del permiso.'); return; }
     }
-    /*
-     * En vacaciones las observaciones son opcionales: no hay nada que
-     * justificar, es un derecho. Si se dejan en blanco se manda 'Vacaciones',
-     * que ademas es lo que vera administracion en la lista.
-     */
-    const finalReason = vacation ? (reason.trim() || 'Vacaciones') : reason.trim();
+    if (vacation) {
+      // La fundamentacion va al FUT de la empresa (issue #42).
+      if (reason.trim().length < 5) { setMessage('Escribe la fundamentación de tu solicitud: va en tu FUT.'); return; }
+      if (validacion && !validacion.ok) { setMessage('Corrige las fechas: la solicitud no cumple las reglas de vacaciones.'); return; }
+    }
+    const finalReason = reason.trim();
     setSaving(true); setMessage('');
-    try { const res = await apiFetch('/api/attendance/permissions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permissionType: vacation ? VACATION : type, permissionDate: date, permissionEndDate: endDate || date, startTime: vacation ? null : (startTime || null), endTime: vacation ? null : (endTime || null), authorizedExitTime: vacation ? '00:00' : (startTime || '00:00'), reason: finalReason, attachment: vacation ? null : attachment }) }); const data = await res.json(); setMessage(data.message || (res.ok ? 'Solicitud enviada.' : 'No se pudo enviar.')); if (res.ok) { changeFamily(''); await load(); } } finally { setSaving(false); }
+    try { const res = await apiFetch('/api/attendance/permissions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permissionType: vacation ? VACATION : type, permissionDate: date, permissionEndDate: endDate || date, startTime: vacation ? null : (startTime || null), endTime: vacation ? null : (endTime || null), authorizedExitTime: vacation ? '00:00' : (startTime || '00:00'), reason: finalReason, attachment: vacation ? null : attachment, quinceSeguidosPedidoPorEscrito: vacation && quinceSeguidos }) }); const data = await res.json(); setMessage(data.message || (res.ok ? 'Solicitud enviada.' : 'No se pudo enviar.')); if (!res.ok && data.code === 'VALIDACION_VACACIONES') setValidacion({ ok: false, errores: data.errores, avisos: data.avisos, sugerencias: data.sugerencias }); if (res.ok) { changeFamily(''); await load(); await loadMisVacaciones(); } } finally { setSaving(false); }
   };
   const cancel = async (id: number) => { const res = await apiFetch(`/api/attendance/permissions/${id}/cancel`, { method: 'POST' }); if (res.ok) await load(); };
   const statusLabel: any = { PENDING: 'Pendiente', APPROVED: 'Aprobado', REJECTED: 'Rechazado', CANCELLED: 'Cancelado' };
@@ -138,6 +165,25 @@ export default function PermissionsScreen() {
         {/* Vacaciones: fechas y observaciones, nada mas. No hay hora que
             autorizar ni sustento que adjuntar. */}
         {family === 'VACATION' && <>
+          {misVacaciones?.cabecera && <View style={s.resumen}>
+            <Text style={s.resumenTitulo}>{tr('MY VACATIONS', 'MIS VACACIONES')}</Text>
+            <View style={s.resumenFila}>
+              <Text style={s.resumenEtiqueta}>{tr('Days in your favor', 'Días a tu favor')}</Text>
+              <Text style={s.resumenValor}>{misVacaciones.cabecera.diasAFavor}</Text>
+            </View>
+            {!!misVacaciones.cabecera.proximoPlazo && <Text style={s.resumenNota}>{tr('Take them before', 'Gózalos antes del')} {fechaCorta(misVacaciones.cabecera.proximoPlazo)}</Text>}
+            {(misVacaciones.anios || []).map((a: any) => <Text key={a.numero} style={s.resumenNota}>
+              {tr('Year', 'Año')} {a.numero} ({fechaCorta(a.inicio)} – {fechaCorta(a.fin)}): {a.completo
+                ? `${a.gozados} ${tr('taken', 'gozados')} · ${a.programados} ${tr('scheduled', 'programados')} · ${a.diasAFavor} ${tr('in your favor', 'a favor')}`
+                : `${tr('in progress', 'en curso')}, ${a.enCurso?.acumulado ?? 0} ${tr('accrued', 'acumulados')} · ${tr('advance from', 'adelanto desde el')} ${fechaCorta(a.enCurso?.adelantoDesde)}`}
+            </Text>)}
+            {(misVacaciones.anios || []).flatMap((a: any) => a.descansos).filter((d: any) => d.documento?.futId).map((d: any) =>
+              <TouchableOpacity key={`fut-${d.id}`} onPress={() => verFut(d.documento.futId)}>
+                <Text style={s.cancel}>{d.documento.etiqueta} · {fechaCorta(d.desde)} – {fechaCorta(d.hasta)}</Text>
+              </TouchableOpacity>)}
+          </View>}
+          <TouchableOpacity onPress={() => router.push('/mis-vacaciones' as any)}><Text style={s.review}>{tr('See my vacations by year and my FUTs', 'Ver mis vacaciones por año y mis FUT')} ›</Text></TouchableOpacity>
+          <Text style={s.hint}>{tr('In a small company vacations are taken in blocks of 7 and 8 calendar days.', 'En la pequeña empresa las vacaciones se toman en bloques de 7 y 8 días calendario.')}</Text>
           <Text style={s.label}>{tr('Start date', 'Fecha de inicio')}</Text><DateField value={date} onChange={setDate} min={todayLocal()} />
           <Text style={s.hint}>{tr('The first day you will NOT come to work.', 'El primer día en que NO asistirás a laborar.')}</Text>
           <Text style={s.label}>{tr('End date', 'Fecha de fin')}</Text><DateField value={endDate} onChange={setEndDate} min={date || todayLocal()} />
@@ -151,25 +197,40 @@ export default function PermissionsScreen() {
             if (!dias) return null;
             return <View style={s.resumen}>
               <Text style={s.resumenTitulo}>{tr('PERIOD SUMMARY', 'RESUMEN DEL PERÍODO')}</Text>
-              {/* El hábil va primero y destacado: es el que se descuenta del
-                  saldo. El del calendario queda debajo como referencia, para
-                  que nadie piense que se le cobran los fines de semana. */}
+              {/* Las vacaciones se cuentan en dias calendario: los fines de semana
+                  y feriados dentro del bloque cuentan (D. Leg. 713, art. 10). */}
               <View style={s.resumenFila}>
-                <Text style={s.resumenEtiqueta}>{tr('Days deducted', 'Días que se descuentan')}</Text>
-                <Text style={s.resumenValor}>{dias.habiles}</Text>
+                <Text style={s.resumenEtiqueta}>{tr('Days deducted (calendar)', 'Días que se descuentan (calendario)')}</Text>
+                <Text style={s.resumenValor}>{dias.calendario}</Text>
               </View>
               <View style={s.resumenFila}>
-                <Text style={s.resumenEtiqueta}>{tr('Calendar days', 'Días Calendario')}</Text>
-                <Text style={s.resumenSecundario}>{dias.calendario}</Text>
+                <Text style={s.resumenEtiqueta}>{tr('Of which working days', 'De ellos, días laborables')}</Text>
+                <Text style={s.resumenSecundario}>{dias.habiles}</Text>
               </View>
               {dias.calendario !== dias.habiles && <Text style={s.resumenNota}>
-                {tr('Weekends are not deducted from your balance.', 'Los fines de semana no se descuentan de tu saldo.')}
+                {tr('Weekends and holidays inside the block also count as vacation.', 'Los fines de semana y feriados dentro del bloque también cuentan como vacaciones.')}
               </Text>}
+              {validando && <Text style={s.resumenNota}>{tr('Checking the rules...', 'Revisando las reglas...')}</Text>}
+              {!validando && validacion && <>
+                <Text style={[s.resumenTitulo, { marginTop: 8, color: validacion.ok ? '#4ADE80' : '#FB7185' }]}>
+                  {validacion.ok ? tr('VALID REQUEST', 'SOLICITUD VÁLIDA') : tr('CANNOT BE SENT AS IS', 'NO SE PUEDE ENVIAR ASÍ')}
+                  {validacion.anioDeServicio ? ` · ${tr('Year', 'Año')} ${validacion.anioDeServicio}${validacion.semana ? ` · ${validacion.semana}` : ''}` : ''}
+                </Text>
+                {(validacion.errores || []).map((e: any, i: number) => <Text key={`e${i}`} style={[s.resumenNota, { color: '#FB7185' }]}>• {e.mensaje}</Text>)}
+                {(validacion.avisos || []).map((a: any, i: number) => <Text key={`a${i}`} style={[s.resumenNota, { color: '#FBBF24' }]}>• {a.mensaje}</Text>)}
+                {(contarDias(date, endDate)?.calendario === 15 || quinceSeguidos) && <TouchableOpacity onPress={() => setQuinceSeguidos(!quinceSeguidos)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                  <Ionicons name={quinceSeguidos ? 'checkbox' : 'square-outline'} size={20} color="#7BC3FF" />
+                  <Text style={s.resumenEtiqueta}>{tr('I request in writing to take the 15 days in a row', 'Pido por escrito tomar los 15 días seguidos')}</Text>
+                </TouchableOpacity>}
+                {(validacion.sugerencias || []).map((f: any) => <TouchableOpacity key={f.desde} onPress={() => { setDate(f.desde); setEndDate(f.hasta); }}>
+                  <Text style={s.cancel}>{tr('Use', 'Usar')} {fechaCorta(f.desde)} – {fechaCorta(f.hasta)}</Text>
+                </TouchableOpacity>)}
+              </>}
             </View>;
           })()}
 
-          <Text style={s.label}>{tr('Notes (optional)', 'Observaciones (opcional)')}</Text>
-          <TextInput value={reason} onChangeText={setReason} multiline placeholder={tr('Anything administration should know', 'Algo que administración deba saber')} placeholderTextColor="#6E8297" style={[s.input, s.area]} />
+          <Text style={s.label}>{tr('Grounds (goes on your FUT)', 'Fundamentación (va en tu FUT)')}</Text>
+          <TextInput value={reason} onChangeText={setReason} multiline placeholder={tr('E.g. I request the 2nd week of my second year of service', 'Ej.: Solicito la 2.ª semana de vacaciones de mi segundo año de servicio')} placeholderTextColor="#6E8297" style={[s.input, s.area]} />
           {!!message && <Text style={s.message}>{message}</Text>}
           <TouchableOpacity disabled={saving} onPress={submit} style={[s.submit, saving && { opacity: .6 }]}><Text style={s.submitText}>{saving ? tr('Sending...', 'Enviando...') : tr('Send request', 'Enviar solicitud')}</Text></TouchableOpacity>
         </>}

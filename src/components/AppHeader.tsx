@@ -102,7 +102,7 @@ export default function AppHeader({ title, active, fullName, rol, email }: Props
     if (tab !== active) goToTab(tab, params);
   };
 
-  const open = (pathname: '/permisos' | '/asistencia-general') => {
+  const open = (pathname: '/permisos' | '/asistencia-general' | '/mis-vacaciones') => {
     setMenuVisible(false);
     openScreen(pathname, params);
   };
@@ -118,6 +118,7 @@ export default function AppHeader({ title, active, fullName, rol, email }: Props
     { key: 'historial', icon: 'calendar-outline', label: tr('Attendance history', 'Historial de asistencia'), onPress: () => go('historial'), visible: true },
     { key: 'perfil', icon: 'person-outline', label: tr('My profile', 'Mi perfil'), onPress: () => go('perfil'), visible: true },
     { key: 'permisos', icon: 'document-text-outline', label: tr('My requests', 'Mis solicitudes'), onPress: () => open('/permisos'), visible: true },
+    { key: 'vacaciones', icon: 'sunny-outline', label: tr('My vacations', 'Mis vacaciones'), onPress: () => open('/mis-vacaciones'), visible: true },
     { key: 'general', icon: 'people-outline', label: tr('General attendance', 'Asistencia general'), onPress: () => open('/asistencia-general'), visible: isAdminRole(rol) },
     {
       key: 'configuracion',

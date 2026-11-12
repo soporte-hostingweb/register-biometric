@@ -21,6 +21,6 @@ export function goToTab(tab: AppTab, params: SessionParams) {
 }
 
 /** Abre una pantalla secundaria (solicitudes, asistencia general) encima de la actual. */
-export function openScreen(pathname: '/permisos' | '/asistencia-general', params: SessionParams) {
+export function openScreen(pathname: '/permisos' | '/asistencia-general' | '/mis-vacaciones', params: SessionParams) {
   router.push({ pathname: pathname as any, params: { fullName: params.fullName, rol: params.rol, email: params.email } });
 }
