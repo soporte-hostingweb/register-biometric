@@ -5,7 +5,7 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, Touc
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiFetch, logoutFromApi } from '../services/api';
 import { useLanguage } from '../services/language';
-import { AppTab, goToTab, isAdminRole, isSuperAdminRole, openScreen, SessionParams } from '../services/session-params';
+import { AppTab, goToTab, isAdminRole, isSuperAdminRole, openScreen, SessionParams, useRolDeLaSesion } from '../services/session-params';
 import { colors } from '../styles/theme';
 
 type Notification = {
@@ -45,6 +45,7 @@ export default function AppHeader({ title, active, fullName, rol, email }: Props
   const { tr } = useLanguage();
   const insets = useSafeAreaInsets();
   const params = { fullName, rol, email };
+  const rolDeLaSesion = useRolDeLaSesion();
   const [menuVisible, setMenuVisible] = useState(false);
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -119,11 +120,11 @@ export default function AppHeader({ title, active, fullName, rol, email }: Props
     { key: 'perfil', icon: 'person-outline', label: tr('My profile', 'Mi perfil'), onPress: () => go('perfil'), visible: true },
     { key: 'permisos', icon: 'document-text-outline', label: tr('My requests', 'Mis solicitudes'), onPress: () => open('/permisos'), visible: true },
     { key: 'vacaciones', icon: 'sunny-outline', label: tr('My vacations', 'Mis vacaciones'), onPress: () => open('/mis-vacaciones'), visible: true },
-    { key: 'general', icon: 'people-outline', label: tr('General attendance', 'Asistencia general'), onPress: () => open('/asistencia-general'), visible: isAdminRole(rol) },
+    { key: 'general', icon: 'people-outline', label: tr('General attendance', 'Asistencia general'), onPress: () => open('/asistencia-general'), visible: isAdminRole(rolDeLaSesion) },
     {
       key: 'configuracion',
-      icon: isSuperAdminRole(rol) ? 'shield-checkmark-outline' : 'settings-outline',
-      label: isSuperAdminRole(rol) ? tr('Settings and devices', 'Configuración y dispositivos') : tr('Settings', 'Configuración'),
+      icon: isSuperAdminRole(rolDeLaSesion) ? 'shield-checkmark-outline' : 'settings-outline',
+      label: isSuperAdminRole(rolDeLaSesion) ? tr('Settings and devices', 'Configuración y dispositivos') : tr('Settings', 'Configuración'),
       onPress: () => go('configuracion'),
       visible: true,
     },

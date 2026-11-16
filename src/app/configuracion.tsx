@@ -18,7 +18,7 @@ import {
 import TabScreen from '../components/TabScreen';
 import { apiFetch, logoutFromApi } from '../services/api';
 import { useLanguage } from '../services/language';
-import { goToTab, isAdminRole, isSuperAdminRole, openScreen } from '../services/session-params';
+import { goToTab, isAdminRole, isSuperAdminRole, openScreen, useRolDeLaSesion } from '../services/session-params';
 import { getWebPushPermission, subscribeToWebPush, supportsWebPush } from '../services/web-push';
 import { cardShadow, colors, WIDE_MAX_WIDTH } from '../styles/theme';
 
@@ -83,8 +83,9 @@ export default function ConfiguracionScreen() {
   const { tr, language, setLanguage } = useLanguage();
   const { fullName, email, rol } = useLocalSearchParams<{ fullName: string; email: string; rol: string }>();
   const session = { fullName, rol, email };
-  const superAdmin = isSuperAdminRole(rol);
-  const admin = isAdminRole(rol);
+  const rolDeLaSesion = useRolDeLaSesion();
+  const superAdmin = isSuperAdminRole(rolDeLaSesion);
+  const admin = isAdminRole(rolDeLaSesion);
   const { width } = useWindowDimensions();
   const isMobile = width <= 600;
 

@@ -1,15 +1,64 @@
+// La pantalla con el logo que Android pone al abrir la app instalada dura hasta que llega la
+// primera página. Guardando la app en el teléfono, abre sin esperar a la red y ese logo
+// apenas se ve.
+//  - Páginas: se sirven al instante desde el teléfono y, en paralelo, se pide la versión nueva.
+//    Si cambió, la página avisa con el banner "Actualizar" (ver +html.tsx).
+//  - /_expo/static y /assets llevan hash en el nombre: nunca cambian, se guardan para siempre.
+//  - Todo lo demás (y la API, que está en otro dominio) va siempre a la red.
+const CACHE_PAGINAS = 'hwperu-paginas-v1';
+const CACHE_ESTATICOS = 'hwperu-estaticos-v1';
+const CACHES_VIGENTES = [CACHE_PAGINAS, CACHE_ESTATICOS];
+
 self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys()
+      .then((nombres) => Promise.all(nombres.filter((n) => !CACHES_VIGENTES.includes(n)).map((n) => caches.delete(n))))
+      .then(() => self.clients.claim())
+  );
 });
 
-self.addEventListener('fetch', (event) => {
-  if (event.request.method === 'GET' && event.request.url.startsWith(self.location.origin)) {
-    event.respondWith(fetch(event.request));
+async function paginaRapida(request) {
+  const cache = await caches.open(CACHE_PAGINAS);
+  const desdeRed = fetch(request)
+    .then((respuesta) => {
+      if (respuesta.ok && !respuesta.redirected) cache.put(request, respuesta.clone());
+      return respuesta;
+    });
+  const guardada = await cache.match(request, { ignoreSearch: true });
+  if (guardada) {
+    desdeRed.catch(() => {});
+    return guardada;
   }
+  return desdeRed;
+}
+
+async function estaticoPermanente(request) {
+  const cache = await caches.open(CACHE_ESTATICOS);
+  const guardado = await cache.match(request);
+  if (guardado) return guardado;
+  const respuesta = await fetch(request);
+  if (respuesta.ok) cache.put(request, respuesta.clone());
+  return respuesta;
+}
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  if (request.method !== 'GET' || !request.url.startsWith(self.location.origin)) return;
+  const url = new URL(request.url);
+
+  if (request.mode === 'navigate') {
+    event.respondWith(paginaRapida(request));
+    return;
+  }
+  if (url.pathname.startsWith('/_expo/static/') || url.pathname.startsWith('/assets/')) {
+    event.respondWith(estaticoPermanente(request));
+    return;
+  }
+  event.respondWith(fetch(request));
 });
 
 self.addEventListener('push', (event) => {

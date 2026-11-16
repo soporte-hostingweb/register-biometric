@@ -6,10 +6,16 @@ const SESSION_STARTED_AT_KEY = '@asistencia_session_started_at';
 const SESSION_EXPIRES_AT_KEY = '@asistencia_session_expires_at';
 const SESSION_USER_KEY = '@asistencia_session_user';
 
-// Debe coincidir con SESSION_TTL_MS de backend/utils/authTokens.js. El refresh token
-// y su cookie caducan 25 horas despues del login y la renovacion NO los extiende, asi
-// que si la app creyera que duran mas, esa ultima hora daria un cierre por sorpresa.
+// Deben coincidir con backend/utils/authTokens.js. La sesion vence tras 25 horas SIN uso:
+// cada renovacion la corre otras 25 horas, con un tope de 7 dias desde el login. Quien
+// marca de lunes a viernes entra una vez por semana (del viernes al lunes pasan mas de 25 h).
 export const SESSION_TTL_MS = 25 * 60 * 60 * 1000;
+export const SESSION_MAX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function nuevoVencimiento(sessionStartedAt: number | null, ahora = Date.now()) {
+  const tope = sessionStartedAt ? sessionStartedAt + SESSION_MAX_TTL_MS : ahora + SESSION_TTL_MS;
+  return Math.min(ahora + SESSION_TTL_MS, tope);
+}
 
 export type AuthSessionUser = {
   email: string;
@@ -141,8 +147,8 @@ export async function clearAuthSession() {
 export async function restoreSession(): Promise<{ user: AuthSessionUser | null }> {
   const session = await getStoredSession();
 
-  // Las 25 horas son absolutas y se miden en el dispositivo. Pasado ese plazo toca
-  // teclear correo y contrasena otra vez, sin preguntarle nada al servidor.
+  // Pasadas 25 horas sin usar la app (o 7 dias desde el login) toca teclear correo y
+  // contrasena otra vez, sin preguntarle nada al servidor.
   if (!session.sessionExpiresAt || session.sessionExpiresAt <= Date.now()) {
     await clearAuthSession();
     return { user: null };
@@ -215,6 +221,9 @@ async function refreshAccessToken(): Promise<RefreshOutcome> {
   if (!data?.token) return { status: 'unavailable' };
 
   await saveAccessToken(data.token);
+  // El servidor acaba de correr la sesion 25 horas: la app hace lo mismo con su reloj.
+  const { sessionStartedAt } = await getStoredSession();
+  await AsyncStorage.setItem(SESSION_EXPIRES_AT_KEY, String(nuevoVencimiento(sessionStartedAt)));
   return { status: 'ok', token: data.token as string };
 }
 

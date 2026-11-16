@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch } from '../services/api';
 import { useLanguage } from '../services/language';
+import { useRolDeLaSesion } from '../services/session-params';
 
 type Employee = { id: number; fullName: string; email?: string; position?: string };
 type AttendanceRow = { date: string; clockIn: string; clockOut: string; totalHours: string; status?: string; observations?: string };
@@ -18,7 +19,7 @@ const dateLabel = (value: string) => {
 
 export default function GeneralAttendanceScreen() {
   const { tr } = useLanguage();
-  const { rol } = useLocalSearchParams<{ rol?: string }>();
+  const rol = useRolDeLaSesion();
   const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(String(rol || '').toUpperCase());
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedId, setSelectedId] = useState('');

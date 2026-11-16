@@ -398,8 +398,11 @@ export default function Dashboard() {
       const location = await Location.getCurrentPositionAsync({});
       let direccion = `${location.coords.latitude.toFixed(5)}, ${location.coords.longitude.toFixed(5)}`;
       try {
-        const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.coords.latitude}&lon=${location.coords.longitude}&zoom=17`, {
-          headers: { 'User-Agent': 'AverageBiometricRegistrationApp' },
+        // Privacidad (Ley 29733): al servicio externo solo va la ubicación redondeada a unos 100 m.
+        const latAprox = location.coords.latitude.toFixed(3);
+        const lonAprox = location.coords.longitude.toFixed(3);
+        const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latAprox}&lon=${lonAprox}&zoom=16`, {
+          headers: { 'User-Agent': 'HWPeru-Asistencia/1.0' },
         });
         if (geoRes.ok) {
           const geoData = await geoRes.json();

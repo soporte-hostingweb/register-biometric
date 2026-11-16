@@ -94,12 +94,23 @@ export default function Root({ children }: PropsWithChildren) {
                       });
                     });
 
-                    var initialHtmlSignature = null;
+                    // La página puede venir guardada en el teléfono (push-sw.js), así que se
+                    // compara el bundle que está CORRIENDO con el del servidor: si difieren,
+                    // hay versión nueva y se ofrece el banner "Actualizar".
+                    // Sin barras invertidas a propósito: dentro de este texto se pierden y
+                    // la expresión se volvía un comentario que rompía todo el script.
+                    var ENTRADA = /[/]_expo[/]static[/]js[/]web[/]entry-[^"'?]+/;
+                    var ESTATICOS = /[/]_expo[/]static[/][^"']+/g;
+                    var scriptEnUso = Array.prototype.map.call(document.scripts, function (s) { return s.getAttribute('src') || ''; })
+                      .find(function (src) { return ENTRADA.test(src); });
+                    var initialHtmlSignature = scriptEnUso ? scriptEnUso.match(ENTRADA)[0] : null;
                     function checkHtmlVersion() {
                       fetch('/', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
                         .then(function (response) { return response.text(); })
                         .then(function (html) {
-                          var signature = html.match(/\/_expo\/static\/[^\"']+/g)?.join('|') || html.length + ':' + html.slice(0, 512);
+                          var entrada = html.match(ENTRADA);
+                          var todos = html.match(ESTATICOS);
+                          var signature = entrada ? entrada[0] : (todos ? todos.join('|') : html.length + ':' + html.slice(0, 512));
                           if (initialHtmlSignature === null) initialHtmlSignature = signature;
                           else if (signature !== initialHtmlSignature) notifyUpdateAvailable();
                         })
